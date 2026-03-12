@@ -9,7 +9,7 @@ const NUM_BUTTONS = 5;
 
 const BUTTON_LABELS = [
   "Button 1",
-  "Dog Picture Button",
+  "Button 2: Random Advice - Gülce Tahtasız",
   "Button 3",
   "Button 4",
   "Button 5",

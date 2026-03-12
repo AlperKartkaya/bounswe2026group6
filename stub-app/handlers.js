@@ -10,11 +10,25 @@ function onButton1Click() {
 }
 
 function onButton2Click() {
-  fetch("https://dog.ceo/api/breeds/image/random")
-    .then(res => res.json())
+    const apiUrl = "https://api.adviceslip.com/advice";
+
+  fetch(apiUrl)
+    .then(response => response.json())
     .then(data => {
-      alert(data.message);
+
+      const advice = data.slip.advice;
+
+      alert(
+        "Random Advice:\n\n" +
+        advice +
+        "\n\nData from AdviceSlip API"
+      );
+
+    })
+    .catch(error => {
+      alert("API alınamadı: " + error);
     });
+
 }
 
 function onButton3Click() {
