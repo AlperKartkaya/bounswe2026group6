@@ -14,5 +14,5 @@ const BUTTON_LABELS = [
   "KaganCan-4-RANDOMJSON",
   "EthemErincCengiz - 5 - RandomJoke",
   "BeratSayın - Random Advice",
-  "Button 7"
+  "AlperKartkaya-7-Random Joke"
 ];

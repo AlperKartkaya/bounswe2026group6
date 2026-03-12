@@ -213,6 +213,9 @@ function onButton5Click() {
     });
 }
 
+function onButton7Click() {
+  window.location.href = "joke.html";
+}
 function onButton6Click() {
   // Opens a new blank tab [cite: 49]
   const advicePage = window.open('', '_blank');
@@ -252,8 +255,4 @@ function onButton6Click() {
   advicePage.document.close();
 }
 
-
-function onButton7Click() {
-  console.log("Button 7 clicked -- implement me!");
-}
 
