@@ -10,7 +10,11 @@ function onButton1Click() {
 }
 
 function onButton2Click() {
-  console.log("Button 2 clicked -- implement me!");
+  fetch("https://dog.ceo/api/breeds/image/random")
+    .then(res => res.json())
+    .then(data => {
+      alert(data.message);
+    });
 }
 
 function onButton3Click() {
