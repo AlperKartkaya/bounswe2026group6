@@ -9,10 +9,10 @@ const NUM_BUTTONS = 7;
 
 const BUTTON_LABELS = [
   "Button 1",
-  "Button 2",
-  "Button 3",
-  "Button 4",
-  "Button 5",
-  "Button 6",
-  "Random Joke",
+  "Button 2: Random Advice - Gülce Tahtasız",
+  "Mehmet Can Gürbüz 3- Wheather API", 
+  "KaganCan-4-RANDOMJSON",
+  "EthemErincCengiz - 5 - RandomJoke",
+  "BeratSayın - Random Advice",
+  "AlperKartkaya-7-Random Joke"
 ];
