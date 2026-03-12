@@ -12,7 +12,7 @@ const BUTTON_LABELS = [
   "Button 2: Random Advice - Gülce Tahtasız",
   "Mehmet Can Gürbüz 3- Wheather API", 
   "KaganCan-4-RANDOMJSON",
-  "Button 5",
+  "EthemErincCengiz - 5 - RandomJoke",
   "BeratSayın - Random Advice",
   "Button 7"
 ];
