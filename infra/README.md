@@ -21,9 +21,10 @@ CMPE354 Group 6 repository.
 
 ```text
 .
-├── frontend/   # Web app
-├── mobile/     # Mobile app
+├── web/        # Web app
+├── android/    # Android mobile app
 ├── backend/    # API and server logic
 ├── docs/       # Reports, notes, and documentation
+├── infra/      # Docker, compose, nginx, scripts, and infrastructure-related files
 └── .github/    # Issue templates and workflows
 ```
