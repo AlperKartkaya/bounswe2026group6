@@ -28,11 +28,13 @@ async function findProfileBundleByUserId(userId) {
       lp.longitude,
       lp.last_updated
     FROM user_profiles up
+    JOIN users u ON u.user_id = up.user_id
     LEFT JOIN privacy_settings ps ON ps.profile_id = up.profile_id
     LEFT JOIN health_info hi ON hi.profile_id = up.profile_id
     LEFT JOIN physical_info pi ON pi.profile_id = up.profile_id
     LEFT JOIN location_profiles lp ON lp.profile_id = up.profile_id
     WHERE up.user_id = $1
+      AND u.is_deleted = FALSE
     LIMIT 1;
   `;
 
