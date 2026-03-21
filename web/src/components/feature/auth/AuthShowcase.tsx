@@ -47,7 +47,7 @@ export function AuthShowcase() {
     const activeSlide = slides[activeIndex];
 
     return (
-        <section className="relative hidden h-[580px] overflow-hidden rounded-[28px] bg-[#D84A4A] p-8 text-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] lg:flex lg:flex-col">
+        <section className="relative hidden h-[580px] overflow-hidden rounded-[28px] bg-red-500 p-8 text-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] lg:flex lg:flex-col">
             <div className="relative z-10 flex h-full flex-col">
                 <div>
                     <div className="mb-4 text-sm font-semibold uppercase tracking-[0.22em] text-white/80">
@@ -102,7 +102,7 @@ export function AuthShowcase() {
                 ))}
             </div>
 
-            <div className="absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-[#C53E3E]/50" />
+            <div className="absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-red-300/50" />
             <div className="absolute right-8 top-10 h-28 w-28 rounded-full bg-white/10" />
             <div className="absolute bottom-16 right-14 h-16 w-16 rounded-full bg-white/10" />
         </section>
