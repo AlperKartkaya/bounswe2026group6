@@ -31,7 +31,7 @@ export function SelectInput({
     return (
         <div className="flex w-full flex-col gap-2">
             {label ? (
-                <label htmlFor={id} className="text-sm font-medium text-[#2B2B33]">
+                <label htmlFor={id} className="text-sm font-medium text-gray-800">
                     {label}
                 </label>
             ) : null}
@@ -39,8 +39,8 @@ export function SelectInput({
             <div
                 className={cn(
                     "relative h-11 w-full rounded-[10px] border bg-white transition-colors",
-                    "border-[#E7E7EA] focus-within:border-[#D84A4A]",
-                    error && "border-[#D84A4A]",
+                    "border-gray-200 focus-within:border-red-500",
+                    error && "border-red-500",
                     className
                 )}
             >
@@ -48,7 +48,7 @@ export function SelectInput({
                     <span
                         className={cn(
                             "truncate text-sm",
-                            displayValue ? "text-[#2B2B33]" : "text-[#A3A3AD]"
+                            displayValue ? "text-gray-800" : "text-gray-400"
                         )}
                     >
                         {displayValue || placeholder}
@@ -64,7 +64,7 @@ export function SelectInput({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="text-[#737380]"
+                        className="text-gray-400"
                     >
                         <path d="m6 9 6 6 6-6" />
                     </svg>
@@ -90,9 +90,9 @@ export function SelectInput({
             </div>
 
             {error ? (
-                <p className="text-xs text-[#D84A4A]">{error}</p>
+                <p className="text-xs text-red-500">{error}</p>
             ) : helperText ? (
-                <p className="text-xs text-[#737380]">{helperText}</p>
+                <p className="text-xs text-gray-400">{helperText}</p>
             ) : null}
         </div>
     );
