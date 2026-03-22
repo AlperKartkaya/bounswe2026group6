@@ -179,8 +179,38 @@ async function findHelpRequestByIdForUser(userId, requestId) {
   return mapHelpRequest(result.rows[0]);
 }
 
+async function markHelpRequestAsSynced(userId, requestId) {
+  await query(
+    `
+      UPDATE help_requests
+      SET is_saved_locally = FALSE
+      WHERE user_id = $1 AND request_id = $2
+    `,
+    [userId, requestId],
+  );
+
+  return findHelpRequestByIdForUser(userId, requestId);
+}
+
+async function markHelpRequestAsResolved(userId, requestId) {
+  await query(
+    `
+      UPDATE help_requests
+      SET status = 'RESOLVED',
+          resolved_at = CURRENT_TIMESTAMP,
+          is_saved_locally = FALSE
+      WHERE user_id = $1 AND request_id = $2
+    `,
+    [userId, requestId],
+  );
+
+  return findHelpRequestByIdForUser(userId, requestId);
+}
+
 module.exports = {
   createHelpRequest,
   listHelpRequestsByUserId,
   findHelpRequestByIdForUser,
+  markHelpRequestAsSynced,
+  markHelpRequestAsResolved,
 };

@@ -1,3 +1,21 @@
+function readUserId(request) {
+  if (request.user && request.user.userId) {
+    return request.user.userId;
+  }
+
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
+  if (
+    isDevelopment
+    && typeof request.headers['x-user-id'] === 'string'
+    && request.headers['x-user-id'].trim() !== ''
+  ) {
+    return request.headers['x-user-id'].trim();
+  }
+
+  return null;
+}
+
 function isBoolean(value) {
   return typeof value === 'boolean';
 }
@@ -69,6 +87,25 @@ function validateCreateHelpRequest(payload) {
   };
 }
 
+function validateHelpRequestStatusUpdate(payload) {
+  const errors = [];
+  const status = typeof payload.status === 'string' ? payload.status.trim().toUpperCase() : '';
+  const allowedStatuses = ['SYNCED', 'RESOLVED'];
+
+  if (!allowedStatuses.includes(status)) {
+    errors.push('`status` must be one of: SYNCED, RESOLVED.');
+  }
+
+  return {
+    errors,
+    value: {
+      status,
+    },
+  };
+}
+
 module.exports = {
+  readUserId,
   validateCreateHelpRequest,
+  validateHelpRequestStatusUpdate,
 };
