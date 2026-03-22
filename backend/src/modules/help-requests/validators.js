@@ -24,14 +24,23 @@ function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function getNormalizedNeedType(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim();
+}
+
 function validateCreateHelpRequest(payload) {
   const errors = [];
   const warnings = [];
 
-  const needType = typeof payload.needType === 'string' ? payload.needType.trim() : '';
+  const requestedNeedType = getNormalizedNeedType(payload.needType);
+  const needType = requestedNeedType || 'general';
 
-  if (!needType) {
-    errors.push('`needType` is required.');
+  if (!requestedNeedType) {
+    warnings.push('Need type was not provided; defaulting to `general`.');
   }
 
   let description = null;
