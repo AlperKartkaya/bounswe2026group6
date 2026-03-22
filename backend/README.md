@@ -100,6 +100,20 @@ Use these as lightweight team defaults during MVP development.
 - Naming: prefer kebab-case for route paths (example: `/help-requests`)
 - DB ownership rule: never let a user read or update another user's profile data without explicit authorization
 
+### Help Request Status Notes
+
+Current MVP request status behavior in `src/modules/help-requests`:
+
+- `PENDING_SYNC`: request is stored with `isSavedLocally=true`
+- `SYNCED`: request exists on backend and is not marked as local-only
+- `MATCHED`: derived from assignment-side internal states such as `ASSIGNED` or `IN_PROGRESS`
+- `RESOLVED`: request is marked resolved and gets `resolved_at`
+
+Scope note:
+
+- `help-requests` owns create, list, detail, and request-side status updates such as `SYNCED` and `RESOLVED`
+- `availability` will own matching and assignment-side behavior that leads to `MATCHED`
+
 ## Database note
 
 The shared PostgreSQL schema already lives in `infra/docker/postgres/init.sql`. This scaffold only prepares configuration and a reusable DB pool helper without implementing feature logic yet.
