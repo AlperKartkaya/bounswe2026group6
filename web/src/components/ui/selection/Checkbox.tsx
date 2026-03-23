@@ -5,7 +5,7 @@ import { cn } from "@/lib/cn";
 
 type CheckboxProps = {
     id?: string;
-    label: string;
+    label: React.ReactNode;
     checked: boolean;
     onCheckedChange: (checked: boolean) => void;
     disabled?: boolean;
@@ -25,7 +25,7 @@ export function Checkbox({
             <label
                 htmlFor={id}
                 className={cn(
-                    "flex items-center gap-3 text-sm text-gray-800",
+                    "flex items-start gap-3 text-sm text-gray-800",
                     disabled && "cursor-not-allowed opacity-60"
                 )}
             >
@@ -35,7 +35,7 @@ export function Checkbox({
                     checked={checked}
                     disabled={disabled}
                     onChange={(e) => onCheckedChange(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-200 accent-red-500"
+                    className="mt-0.5 h-4 w-4 rounded border-gray-200 accent-red-500"
                 />
                 <span>{label}</span>
             </label>
