@@ -9,6 +9,7 @@ import { SelectInput } from "@/components/ui/inputs/SelectInput";
 import { TextArea } from "@/components/ui/inputs/TextArea";
 import { ToggleSwitch } from "@/components/ui/selection/ToggleSwitch";
 import { PrimaryButton } from "@/components/ui/buttons/PrimaryButton";
+import { bloodTypeOptions } from "@/lib/bloodTypes";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ type ProfileData = {
   phone?: string;
   height?: string;
   weight?: string;
+  bloodType?: string;
   gender?: string;
   birthDate?: string;
   medicalHistory?: string;
@@ -50,8 +52,6 @@ const verifiedFieldMap = {
 } as const;
 
 // ─── Location Data ─────────────────────────────────────────────────────────────
-// TODO: Move this to a shared lib/locationData.ts and import in both
-//       CompleteProfileForm and ProfileView to avoid duplication.
 
 const locationData: LocationData = {
   tr: {
@@ -280,6 +280,18 @@ export default function ProfileView() {
             In emergency situations, this information may help responders make faster and safer medical decisions.
           </p>
 
+          <div className="flex flex-col gap-4">
+
+          <SelectInput
+          id="bloodType"
+          label="Blood Type"
+          value={profile.bloodType || ""}
+          options={bloodTypeOptions}
+          onChange={(e) =>
+            setProfile((prev) => prev ? { ...prev, bloodType: e.target.value } : prev)
+          }
+        />
+
           <TextArea
             id="medicalHistory"
             label="Medical History"
@@ -403,6 +415,7 @@ export default function ProfileView() {
                 </button>
               </div>
             ))}
+          </div>
           </div>
         </SectionCard>
 

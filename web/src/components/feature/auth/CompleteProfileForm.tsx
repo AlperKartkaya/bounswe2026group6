@@ -7,11 +7,13 @@ import { TextArea } from "@/components/ui/inputs/TextArea";
 import { ToggleSwitch } from "@/components/ui/selection/ToggleSwitch";
 import { ProfileInfoRow } from "../../ui/display/ProfileInfoRow";
 import { SaveActionBar } from "../../ui/display/SaveActionBar";
+import { bloodTypeOptions } from "@/lib/bloodTypes";
 
 type ProfileForm = {
   gender: string;
   height: string;
   weight: string;
+  bloodType?: string;
   birthDate: string;
   medicalHistory: string;
   country: string;
@@ -43,7 +45,6 @@ type Country = {
 };
 
 type LocationData = Record<string, Country>;
-
 
 const locationData: LocationData = {
   tr: {
@@ -89,6 +90,7 @@ const locationData: LocationData = {
     gender: "",
     height: "",
     weight: "",
+    bloodType: "",
     birthDate: "",
     medicalHistory: "",
     country: "",
@@ -223,22 +225,30 @@ const locationData: LocationData = {
         </ProfileInfoRow>
 
         {/* MEDICAL */}
-        <ProfileInfoRow label="Medical History (optional)">
-          <TextArea
-            id="medicalHistory"
-            placeholder="Chronic diseases & allergies"
-            value={form.medicalHistory}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                medicalHistory: e.target.value,
-              })
-            }
-          />
-          <p className="text-xs text-gray-400">
-            You may need to verify this information later
-          </p>
-        </ProfileInfoRow>
+        <ProfileInfoRow label="Blood Type">
+  <SelectInput
+    id="bloodType"
+    options={bloodTypeOptions}
+    value={form.bloodType ?? ""}
+    onChange={(e) =>
+      setForm({ ...form, bloodType: e.target.value })
+    }
+  />
+</ProfileInfoRow>
+
+<ProfileInfoRow label="Medical History">
+  <TextArea
+    id="medicalHistory"
+    placeholder="Chronic diseases & allergies"
+    value={form.medicalHistory}
+    onChange={(e) =>
+      setForm({ ...form, medicalHistory: e.target.value })
+    }
+  />
+  <p className="text-xs text-gray-400">
+    You may need to verify this information later
+  </p>
+</ProfileInfoRow>
 
         {/* ADDRESS */}
         <ProfileInfoRow label="Address">
