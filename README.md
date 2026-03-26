@@ -1,82 +1,114 @@
-# Neighborhood Emergency Preparedness Hub
+# Neighborhood Emergency Preparedness Hub (NEPH)
 
-CMPE354 Group 6 repository.
+**CMPE354 Group 6**
 
-## Project Overview
+A disaster preparedness platform designed to help neighbors request and coordinate support, with an emphasis on offline readiness during emergencies.
 
-**Domain:** Disaster preparedness, community resilience
+## Current Status
 
-**Description:** Helps individuals prepare for emergencies and connects neighbors for mutual aid; works offline during actual disasters.
+This repository currently reflects the **MVP stage** of the product.
 
-**Technical Challenges:**
+The current MVP includes:
+- a Node.js + Express backend with auth, profiles, help requests, and volunteer availability
+- a web portal for public pages, sign in, profile management, and basic admin views
+- an Android client for emergency-facing request and volunteer flows
 
-- Offline-first architecture with service workers
-- Data synchronization conflicts
-- Progressive web app optimization
-- Battery-efficient design
-- Intermittent connectivity handling
+<div align="center">
+  <img src="./android/screenshot_android_readme.png" alt="Android Emergency Client" height="400"/>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="./web/screenshot_web_readme.png" alt="Web Portal" height="400"/>
+</div>
 
-**Bridging Effect:** Connects those with resources/skills (medical training, generators) to those in need during emergencies; builds neighborhood resilience networks.
 
 ## Project Structure
+| Directory | Role | Tech Stack |
+|-----------|------|------------|
+| `backend/` | API and business logic | Node.js, Express |
+| `web/` | Public web portal, profile flow, admin basics | React, Vite, TypeScript |
+| `android/` | Emergency mobile client | Kotlin, Jetpack Compose |
+| `infra/` | Databases & Configuration | Docker, PostgreSQL |
 
-```text
-.
-├── web/        # Web app
-├── android/    # Android mobile app
-├── backend/    # API and server logic
-├── docs/       # Reports, notes, and documentation
-├── infra/      # Docker, compose, nginx, scripts, and infrastructure-related files
-└── .github/    # Issue templates and workflows
-```
+## Quick Start
 
-## Team Notes
+To run the current MVP locally:
 
-- For shared backend API rules and the error contract, refer to the `Shared API Conventions` section in `backend/README.md`.
+1. **Database:** (Requires Docker)
+   ```bash
+   cd infra/dcompose
+   cp .env.example .env
+   docker compose -f docker-compose-dev.yml up -d
+   ```
+2. **Backend API:** (Requires Node 20)
+   ```bash
+   cd backend
+   cp .env.example .env
+   npm install && npm run dev
+   ```
+   API: `http://localhost:3000`
 
-## Current Runnable Scope
+3. **Web Portal:**
+   ```bash
+   cd web
+   cp .env.example .env
+   npm install && npm run dev
+   ```
+   Web app: `http://localhost:5173`
 
-- PostgreSQL is runnable via Docker Compose from `infra/dcompose`.
-- Backend scaffold is runnable locally with Node.js from `backend/`.
-- `web/` and `android/` are currently project skeletons.
+## Web Usage
 
-## Prerequisites
+After starting the backend and web client:
+- open `http://localhost:5173`
+- use the public pages without signing in
+- sign in to access profile management
+- sign in with an admin account to access admin views
 
-- Git
-- Docker Desktop (or Docker Engine + Compose plugin)
-- Node.js 20 LTS (recommended) and npm
+## Android Quick Start
 
-## Quick Start (Project)
-
-1. Clone and enter repository.
-2. Start database with Docker Compose:
+To build the Android client:
 
 ```bash
-cd infra/dcompose
-cp .env.example .env
-docker compose -f docker-compose-dev.yml up -d
+cd android
+./gradlew :app:assembleDebug
 ```
 
-3. Start backend API in another terminal:
-
-```bash
-cd backend
-cp .env.example .env
-npm install
-npm run dev
-```
-
-4. Verify service health:
+The debug APK will be created at:
 
 ```text
-GET http://localhost:3000/health
+android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Common Notes For Everyone
+### Run on an Emulator
+- start an Android emulator from Android Studio
+- make sure the backend is running on your machine
+- install the debug APK to the emulator
+- the app opens into the emergency hub
 
-- Keep secrets in local `.env` files; never commit real credentials.
-- Database schema source of truth: `infra/docker/postgres/init.sql`.
-- Default ports:
-  : backend `3000`
-  : postgres `5432`
-- Backend API conventions and error contract live in `backend/README.md` under `Shared API Conventions`.
+### Run on a Physical Device
+- connect the device with USB debugging enabled
+- keep the backend running locally
+- forward the backend port to the device:
+
+```bash
+adb reverse tcp:3000 tcp:3000
+```
+
+- then install and open the debug APK
+
+## MVP Feature Overview
+
+### Web
+- public pages
+- authentication
+- profile and privacy management
+- basic admin views
+
+### Android
+- emergency-first home screen
+- help request creation and request tracking
+- volunteer availability and assignment actions
+- emergency contact numbers
+
+## Notes
+
+- do not place real credentials inside committed `.env` files
+- the PostgreSQL schema source of truth is `infra/docker/postgres/init.sql`

@@ -60,7 +60,7 @@ fun AppTextField(
                     )
                 }
             },
-            shape = MaterialTheme.shapes.small,
+            shape = MaterialTheme.shapes.medium,
             keyboardOptions = keyboardOptions,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,

@@ -21,7 +21,7 @@ fun ScreenContainer(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = spacing.xl, vertical = spacing.xl),
+            .padding(horizontal = spacing.xl, vertical = spacing.xxl),
         contentAlignment = contentAlignment,
         content = content
     )

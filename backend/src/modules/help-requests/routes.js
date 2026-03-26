@@ -1,14 +1,19 @@
 const express = require('express');
+const { requireAuth } = require('../auth/middleware');
+
+const {
+  listHelpRequests,
+  createHelpRequest,
+  getHelpRequest,
+  patchHelpRequestStatus,
+} = require('./controller');
 
 const helpRequestsRouter = express.Router();
 
-helpRequestsRouter.get('/', (_request, response) => {
-  response.status(200).json({
-    module: 'help-requests',
-    scope: ['offline draft sync', 'request creation', 'request tracking'],
-    status: 'ready for implementation',
-  });
-});
+helpRequestsRouter.get('/', requireAuth, listHelpRequests);
+helpRequestsRouter.post('/', requireAuth, createHelpRequest);
+helpRequestsRouter.get('/:requestId', requireAuth, getHelpRequest);
+helpRequestsRouter.patch('/:requestId/status', requireAuth, patchHelpRequestStatus);
 
 module.exports = {
   helpRequestsRouter,

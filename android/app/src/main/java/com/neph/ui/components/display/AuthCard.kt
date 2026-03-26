@@ -1,5 +1,6 @@
 package com.neph.ui.components.display
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,16 +22,17 @@ fun AuthCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 6.dp
+            defaultElevation = 2.dp
         )
     ) {
         Column(
             modifier = Modifier.padding(
-                horizontal = spacing.xxl,
+                horizontal = spacing.xl,
                 vertical = spacing.xxl
             )
         ) {

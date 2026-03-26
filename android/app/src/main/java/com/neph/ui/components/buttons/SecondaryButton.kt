@@ -2,6 +2,7 @@ package com.neph.ui.components.buttons
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -19,15 +20,18 @@ fun SecondaryButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp),
         enabled = enabled,
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.outline
         ),
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = MaterialTheme.colorScheme.primary,
+            containerColor = MaterialTheme.colorScheme.surface,
             disabledContentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
         )
     ) {
