@@ -1,10 +1,13 @@
 package com.neph.features.profile.presentation
 
-import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import com.neph.ui.components.buttons.SecondaryButton
 import com.neph.ui.components.display.SectionCard
 import com.neph.ui.components.display.SectionHeader
 import com.neph.ui.layout.AppScaffold
@@ -14,6 +17,7 @@ import com.neph.ui.theme.LocalNephSpacing
 fun ProfileScreen(
     onNavigateToPrivacy: () -> Unit,
     onNavigateToSecurity: () -> Unit,
+    onNavigateToEditProfile: () -> Unit,
     onLogout: () -> Unit
 ) {
     val spacing = LocalNephSpacing.current
@@ -34,6 +38,12 @@ fun ProfileScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            SecondaryButton(
+                text = "Edit Profile",
+                onClick = onNavigateToEditProfile,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
