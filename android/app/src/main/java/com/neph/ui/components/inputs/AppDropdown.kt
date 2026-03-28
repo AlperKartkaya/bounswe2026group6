@@ -2,28 +2,35 @@ package com.neph.ui.components.inputs
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.neph.ui.theme.LocalNephSpacing
+import androidx.compose.material3.ExperimentalMaterial3Api
 
 data class DropdownOption(
     val label: String,
     val value: String
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppDropdown(
     value: String,
@@ -51,25 +58,31 @@ fun AppDropdown(
             color = MaterialTheme.colorScheme.onSurface
         )
 
-        Box(modifier = Modifier.fillMaxWidth()) {
+        ExposedDropdownMenuBox(
+            expanded = expanded && enabled,
+            onExpandedChange = { expanded = !expanded && enabled }
+        ) {
             OutlinedTextField(
                 value = selectedLabel,
                 onValueChange = {},
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = enabled) { expanded = true },
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
                 readOnly = true,
                 enabled = enabled,
                 isError = isError,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onSurface
                 ),
                 placeholder = {
                     Text(
                         text = placeholder,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                },
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                 },
                 shape = MaterialTheme.shapes.small,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -84,26 +97,29 @@ fun AppDropdown(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    errorTextColor = MaterialTheme.colorScheme.onSurface,
+                    errorTextColor = MaterialTheme.colorScheme.onSurface
                 )
             )
 
-            DropdownMenu(
+            ExposedDropdownMenu(
                 expanded = expanded && enabled,
                 onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .wrapContentHeight()
+                    .heightIn(max = 280.dp)
             ) {
                 options.forEach { option ->
                     DropdownMenuItem(
                         text = {
                             Text(
                                 text = option.label,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyLarge
                             )
                         },
                         onClick = {
                             onValueChange(option.value)
                             expanded = false
-                        },
+                        }
                     )
                 }
             }

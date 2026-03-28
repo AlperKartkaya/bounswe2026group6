@@ -54,12 +54,12 @@ private val DarkColorScheme: ColorScheme = darkColorScheme(
     onTertiary = NephColors.TextOnPrimary,
 
     background = NephColors.DarkBackground,
-    onBackground = NephColors.TextPrimary,
+    onBackground = NephColors.SurfaceCard,
 
     surface = NephColors.DarkSurface,
-    onSurface = NephColors.TextPrimary,
+    onSurface = NephColors.SurfaceCard,
     surfaceVariant = NephColors.DarkSurfaceVariant,
-    onSurfaceVariant = NephColors.TextSecondary,
+    onSurfaceVariant = NephColors.TextMuted,
 
     error = NephColors.Error,
     onError = NephColors.TextOnPrimary,
@@ -72,7 +72,7 @@ private val DarkColorScheme: ColorScheme = darkColorScheme(
 
 @Composable
 fun NephTheme(
-    darkTheme: Boolean = true,
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme

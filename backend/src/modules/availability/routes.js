@@ -1,21 +1,14 @@
 const express = require('express');
-const { requireAuth } = require('../auth/middleware');
-
-const {
-  getMe,
-  patchMe,
-  cancelAssignment,
-  resolveAssignment,
-} = require('./controller');
 
 const availabilityRouter = express.Router();
 
-availabilityRouter.get('/', requireAuth, getMe);
-availabilityRouter.get('/me', requireAuth, getMe);
-availabilityRouter.patch('/', requireAuth, patchMe);
-availabilityRouter.patch('/me', requireAuth, patchMe);
-availabilityRouter.patch('/assignments/:assignmentId/cancel', requireAuth, cancelAssignment);
-availabilityRouter.patch('/assignments/:assignmentId/resolve', requireAuth, resolveAssignment);
+availabilityRouter.get('/', (_request, response) => {
+  response.status(200).json({
+    module: 'availability',
+    scope: ['volunteer availability', 'matching', 'assignment flow'],
+    status: 'ready for implementation',
+  });
+});
 
 module.exports = {
   availabilityRouter,

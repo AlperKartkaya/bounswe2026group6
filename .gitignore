@@ -17,7 +17,7 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-!/infra/dcompose/.env.example
+!/infra/compose/.env.example
 
 # Dependencies
 node_modules/
@@ -50,9 +50,6 @@ android/**/build/
 android/local.properties
 *.keystore
 *.jks
-
-# Local docs / tooling artifacts
-.playwright-browsers/
 
 # Test artifacts
 playwright-report/

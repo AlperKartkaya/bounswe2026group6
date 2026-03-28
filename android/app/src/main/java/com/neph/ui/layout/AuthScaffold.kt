@@ -34,10 +34,10 @@ fun AuthScaffold(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 460.dp)
+                .widthIn(max = 420.dp)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(spacing.xxl),
+            verticalArrangement = Arrangement.spacedBy(spacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             AuthCard {
@@ -52,7 +52,7 @@ fun AuthScaffold(
 
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(

@@ -3,15 +3,15 @@ package com.neph.ui.layout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -35,12 +35,7 @@ fun AppScaffold(
             modifier = Modifier.fillMaxSize()
         ) {
             if (topBar != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                    shadowElevation = 2.dp,
-                ) {
-                    topBar()
-                }
+                topBar()
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
 
@@ -50,14 +45,14 @@ fun AppScaffold(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .widthIn(max = 880.dp)
+                        .widthIn(max = 960.dp)
                         .align(Alignment.TopCenter)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(spacing.xl)
                 ) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
 

@@ -61,7 +61,7 @@ fun AppTextArea(
                     )
                 }
             },
-            shape = MaterialTheme.shapes.medium,
+            shape = MaterialTheme.shapes.small,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline,
