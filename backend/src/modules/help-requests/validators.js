@@ -43,6 +43,10 @@ function validateCreateHelpRequest(payload) {
     warnings.push('Need type was not provided; defaulting to `general`.');
   }
 
+  if (requestedNeedType.length > 200) {
+    errors.push('`needType` must be 200 characters or fewer.');
+  }
+
   let description = null;
 
   if (typeof payload.description === 'string') {

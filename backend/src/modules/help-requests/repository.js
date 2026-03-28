@@ -7,6 +7,10 @@ function mapStatus(row) {
     return 'RESOLVED';
   }
 
+  if (row.status === 'CANCELLED') {
+    return 'CANCELLED';
+  }
+
   if (row.status === 'ASSIGNED' || row.status === 'IN_PROGRESS') {
     return 'MATCHED';
   }
