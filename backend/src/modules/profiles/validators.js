@@ -232,8 +232,8 @@ function validateExpertiseAreasPatch(body) {
       return { ok: false, code: 'VALIDATION_ERROR', message: 'expertiseAreas items cannot be empty' };
     }
 
-    if (trimmed.length > 50) {
-      return { ok: false, code: 'VALIDATION_ERROR', message: 'each expertise area must be at most 50 characters' };
+    if (trimmed.length > 35) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'each expertise area must be at most 35 characters' };
     }
 
     normalized.push(trimmed);

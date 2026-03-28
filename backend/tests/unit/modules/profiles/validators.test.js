@@ -148,5 +148,38 @@ describe('profiles validators', () => {
 			expect(result.ok).toBe(false);
 			expect(result.message).toContain('duplicates');
 		});
+
+		test('rejects item longer than 35 characters', () => {
+			const result = validateExpertiseAreasPatch({
+				expertiseAreas: ['a'.repeat(36)],
+			});
+
+			expect(result.ok).toBe(false);
+			expect(result.message).toContain('at most 35 characters');
+		});
+
+		test('accepts 5 items that fit within storage limit', () => {
+			const result = validateExpertiseAreasPatch({
+				expertiseAreas: ['First Aid', 'Logistics', 'Rescue', 'Medical', 'Radio'],
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.data.expertiseAreas).toHaveLength(5);
+		});
+
+		test('accepts 5 max-length items (boundary: 191 chars serialized fits VARCHAR 200)', () => {
+			const result = validateExpertiseAreasPatch({
+				expertiseAreas: [
+					'a'.repeat(35),
+					'b'.repeat(35),
+					'c'.repeat(35),
+					'd'.repeat(35),
+					'e'.repeat(35),
+				],
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.data.expertiseAreas).toHaveLength(5);
+		});
 	});
 });

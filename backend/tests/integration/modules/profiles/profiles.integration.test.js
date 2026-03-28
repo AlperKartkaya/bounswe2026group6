@@ -268,6 +268,50 @@ describe('profiles integration', () => {
 		expect(response.body.code).toBe('VALIDATION_ERROR');
 	});
 
+	test('PATCH /api/profiles/me/profession does not wipe existing expertise areas', async () => {
+		const app = createApp();
+		const userId = 'user_indep_1';
+		await seedActiveUser(userId, 'indep1@example.com');
+		const token = buildAuthToken(userId);
+		await createBaseProfile(app, token);
+
+		await request(app)
+			.put('/api/profiles/me/expertise-areas')
+			.set('Authorization', `Bearer ${token}`)
+			.send({ expertiseAreas: ['First Aid', 'Logistics'] });
+
+		const response = await request(app)
+			.patch('/api/profiles/me/profession')
+			.set('Authorization', `Bearer ${token}`)
+			.send({ profession: 'Nurse' });
+
+		expect(response.status).toBe(200);
+		expect(response.body.expertise[0].profession).toBe('Nurse');
+		expect(response.body.expertise[0].expertiseAreas).toEqual(['First Aid', 'Logistics']);
+	});
+
+	test('PUT /api/profiles/me/expertise-areas does not wipe existing profession', async () => {
+		const app = createApp();
+		const userId = 'user_indep_2';
+		await seedActiveUser(userId, 'indep2@example.com');
+		const token = buildAuthToken(userId);
+		await createBaseProfile(app, token);
+
+		await request(app)
+			.patch('/api/profiles/me/profession')
+			.set('Authorization', `Bearer ${token}`)
+			.send({ profession: 'Paramedic' });
+
+		const response = await request(app)
+			.put('/api/profiles/me/expertise-areas')
+			.set('Authorization', `Bearer ${token}`)
+			.send({ expertiseAreas: ['Search and Rescue'] });
+
+		expect(response.status).toBe(200);
+		expect(response.body.expertise[0].profession).toBe('Paramedic');
+		expect(response.body.expertise[0].expertiseAreas).toEqual(['Search and Rescue']);
+	});
+
 	test('PUT /api/profiles/me/expertise-areas returns 200 and stores parsed expertise areas', async () => {
 		const app = createApp();
 		const userId = 'user_exp_2';
