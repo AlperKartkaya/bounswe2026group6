@@ -171,6 +171,47 @@ function validatePrivacyPatch(body) {
   return { ok: true, data };
 }
 
+function validateProfessionPatch(body) {
+  if (!isPlainObject(body)) {
+    return { ok: false, code: 'VALIDATION_ERROR', message: 'Payload must be an object' };
+  }
+
+  const data = pickAllowed(body, ['profession', 'expertiseArea']);
+
+  if (Object.keys(data).length === 0) {
+    return { ok: false, code: 'VALIDATION_ERROR', message: 'At least one profession field must be provided' };
+  }
+
+  if (data.profession !== undefined) {
+    if (typeof data.profession !== 'string' || data.profession.trim() === '') {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'profession must be a non-empty string' };
+    }
+
+    data.profession = data.profession.trim();
+
+    if (data.profession.length > 200) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'profession must be at most 200 characters' };
+    }
+  }
+
+  if (data.expertiseArea !== undefined) {
+    if (data.expertiseArea !== null && typeof data.expertiseArea !== 'string') {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'expertiseArea must be a string or null' };
+    }
+
+    if (typeof data.expertiseArea === 'string') {
+      const trimmedArea = data.expertiseArea.trim();
+      data.expertiseArea = trimmedArea || null;
+
+      if (data.expertiseArea !== null && data.expertiseArea.length > 200) {
+        return { ok: false, code: 'VALIDATION_ERROR', message: 'expertiseArea must be at most 200 characters' };
+      }
+    }
+  }
+
+  return { ok: true, data };
+}
+
 module.exports = {
   readUserId,
   validateProfilePatch,
@@ -178,4 +219,5 @@ module.exports = {
   validateHealthPatch,
   validateLocationPatch,
   validatePrivacyPatch,
+  validateProfessionPatch,
 };

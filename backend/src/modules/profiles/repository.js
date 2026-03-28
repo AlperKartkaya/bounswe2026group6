@@ -306,6 +306,69 @@ async function upsertPrivacySettings(profileId, data, providedFields = []) {
   await query(sql, values);
 }
 
+async function listExpertiseByProfileId(profileId) {
+  const sql = `
+    SELECT expertise_id, profession, expertise_area, is_verified
+    FROM expertise
+    WHERE profile_id = $1
+    ORDER BY expertise_id ASC;
+  `;
+
+  const result = await query(sql, [profileId]);
+
+  return result.rows.map((row) => ({
+    expertiseId: row.expertise_id,
+    profession: row.profession,
+    expertiseArea: row.expertise_area,
+    isVerified: row.is_verified,
+  }));
+}
+
+async function upsertProfession(profileId, data) {
+  const current = await query(
+    `
+      SELECT expertise_id
+      FROM expertise
+      WHERE profile_id = $1
+      ORDER BY expertise_id ASC
+      LIMIT 1;
+    `,
+    [profileId],
+  );
+
+  if (current.rows.length === 0) {
+    await query(
+      `
+        INSERT INTO expertise (
+          expertise_id,
+          profile_id,
+          profession,
+          expertise_area,
+          is_verified
+        )
+        VALUES ($1, $2, $3, $4, FALSE);
+      `,
+      [makeId('exp'), profileId, data.profession ?? null, data.expertiseArea ?? null],
+    );
+    return;
+  }
+
+  await query(
+    `
+      UPDATE expertise
+      SET profession = COALESCE($2, profession),
+          expertise_area = CASE WHEN $3 THEN $4 ELSE expertise_area END
+      WHERE expertise_id = $1;
+    `,
+    [
+      current.rows[0].expertise_id,
+      data.profession,
+      Object.prototype.hasOwnProperty.call(data, 'expertiseArea'),
+      data.expertiseArea ?? null,
+    ],
+  );
+}
+
 async function findProfileBundleByUserId(userId) {
   const sql = `
     SELECT
@@ -359,5 +422,7 @@ module.exports = {
   upsertHealthInfo,
   upsertLocationProfile,
   upsertPrivacySettings,
+  listExpertiseByProfileId,
+  upsertProfession,
   findProfileBundleByUserId,
 };

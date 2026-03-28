@@ -7,7 +7,9 @@ const {
   upsertHealthInfo,
   upsertLocationProfile,
   upsertPrivacySettings,
+  upsertProfession,
   findProfileBundleByUserId,
+  listExpertiseByProfileId,
 } = require('./repository');
 
 function mapProfileRow(row) {
@@ -56,7 +58,10 @@ async function getMyProfile(userId) {
     return null;
   }
 
-  return mapProfileRow(row);
+  const expertise = await listExpertiseByProfileId(row.profile_id);
+  const mapped = mapProfileRow(row);
+  mapped.expertise = expertise;
+  return mapped;
 }
 
 async function hasProfile(userId) {
@@ -122,6 +127,12 @@ async function patchMyPrivacy(userId, data, providedFields = []) {
   return getMyProfile(userId);
 }
 
+async function patchMyProfession(userId, data) {
+  const profileId = await getProfileIdOrThrow(userId);
+  await upsertProfession(profileId, data);
+  return getMyProfile(userId);
+}
+
 module.exports = {
   getMyProfile,
   hasProfile,
@@ -130,4 +141,5 @@ module.exports = {
   patchMyHealth,
   patchMyLocation,
   patchMyPrivacy,
+  patchMyProfession,
 };
