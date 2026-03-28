@@ -6,6 +6,7 @@ const {
   patchMyHealth,
   patchMyLocation,
   patchMyPrivacy,
+  patchMyProfession,
 } = require('./service');
 const {
   readUserId,
@@ -14,6 +15,7 @@ const {
   validateHealthPatch,
   validateLocationPatch,
   validatePrivacyPatch,
+  validateProfessionPatch,
 } = require('./validators');
 
 function sendError(response, status, code, message) {
@@ -160,6 +162,26 @@ async function patchPrivacy(request, response) {
   }
 }
 
+async function patchProfession(request, response) {
+  const userId = readUserId(request);
+
+  if (!userId) {
+    return sendAuthError(response);
+  }
+
+  const validation = validateProfessionPatch(request.body);
+  if (!validation.ok) {
+    return sendError(response, 400, validation.code, validation.message);
+  }
+
+  try {
+    const profile = await patchMyProfession(userId, validation.data);
+    return response.status(200).json(profile);
+  } catch (error) {
+    return mapServiceError(response, error);
+  }
+}
+
 module.exports = {
   getMe,
   patchMe,
@@ -167,4 +189,5 @@ module.exports = {
   patchHealth,
   patchLocation,
   patchPrivacy,
+  patchProfession,
 };
