@@ -1,36 +1,15 @@
-import Link from "next/link";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { SectionCard } from "@/components/ui/display/SectionCard";
 import { SectionHeader } from "@/components/ui/display/SectionHeader";
+import { BackButton } from "@/components/ui/navigation/BackButton";
 
-type TermsOfServicePageProps = {
-    searchParams?: Promise<{
-        from?: string;
-    }>;
-};
-
-export default async function TermsOfServicePage({
-    searchParams,
-}: TermsOfServicePageProps) {
-    const params = await searchParams;
-    const isFromHome = params?.from === "home";
-    const backHref = isFromHome
-        ? "/home"
-        : params?.from === "signup"
-          ? "/signup?restore=1"
-          : "/signup";
-    const backLabel = isFromHome ? "Back to Home" : "Back to Sign Up";
+export default function TermsOfServicePage() {
 
     return (
         <div className="policy-page">
             <PageContainer>
                 <div className="policy-content-wrap">
-                    <Link
-                        href={backHref}
-                        className="policy-back-link"
-                    >
-                        ← {backLabel}
-                    </Link>
+                    <BackButton className="policy-back-link" />
 
                     <SectionCard className="policy-card">
                         <SectionHeader

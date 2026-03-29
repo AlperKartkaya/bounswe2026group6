@@ -17,6 +17,15 @@ export default function AboutProjectPage() {
                     prepare ahead of time and enabling neighbors to coordinate
                     mutual aid during emergencies.
                 </p>
+
+                <a
+                    href="https://github.com/bounswe/bounswe2026group6/wiki"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="project-link"
+                >
+                    View Project Wiki
+                </a>
             </SectionCard>
         </AppShell>
     );

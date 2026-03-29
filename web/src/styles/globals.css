@@ -917,6 +917,18 @@ textarea::placeholder {
     color: var(--text-secondary);
 }
 
+.project-link {
+    display: inline-flex;
+    margin-top: 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--primary-500);
+}
+
+.project-link:hover {
+    text-decoration: underline;
+}
+
 .team-members-list {
     margin: 16px 0 0;
     padding-left: 18px;
@@ -924,6 +936,15 @@ textarea::placeholder {
     gap: 8px;
     font-size: 0.875rem;
     color: var(--text-secondary);
+}
+
+.team-member-link {
+    color: var(--text-secondary);
+}
+
+.team-member-link:hover {
+    color: var(--primary-500);
+    text-decoration: underline;
 }
 
 .donate-action-wrap {
