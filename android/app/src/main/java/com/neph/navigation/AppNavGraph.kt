@@ -47,6 +47,18 @@ fun AppNavGraph(
                 onLoginSuccess = {
                     navController.navigate(Routes.Profile.route) {
                         popUpTo(Routes.Welcome.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onProfileCompletionRequired = {
+                    navController.navigate(Routes.CompleteProfile.route) {
+                        popUpTo(Routes.Welcome.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onEmailVerificationRequired = {
+                    navController.navigate(Routes.VerifyEmail.route) {
+                        launchSingleTop = true
                     }
                 },
                 onNavigateToForgotPassword = {
@@ -61,7 +73,9 @@ fun AppNavGraph(
                     navController.popBackStack()
                 },
                 onSignupSuccess = {
-                    navController.navigate(Routes.VerifyEmail.route)
+                    navController.navigate(Routes.VerifyEmail.route) {
+                        launchSingleTop = true
+                    }
                 },
                 onNavigateToTerms = {
                     navController.navigate(Routes.TermsOfService.route)
@@ -74,9 +88,10 @@ fun AppNavGraph(
 
         composable(Routes.VerifyEmail.route) {
             VerifyEmailScreen(
-                onVerificationSuccess = {
-                    navController.navigate(Routes.CompleteProfile.route) {
+                onContinueToLogin = {
+                    navController.navigate(Routes.Login.route) {
                         popUpTo(Routes.Welcome.route) { inclusive = false }
+                        launchSingleTop = true
                     }
                 },
                 onNavigateBack = {
@@ -90,6 +105,7 @@ fun AppNavGraph(
                 onComplete = {
                     navController.navigate(Routes.Profile.route) {
                         popUpTo(Routes.Welcome.route) { inclusive = false }
+                        launchSingleTop = true
                     }
                 },
                 onNavigateBack = {
@@ -130,12 +146,18 @@ fun AppNavGraph(
                 onNavigateToSecurity = {
                     navController.navigate(Routes.Security.route)
                 },
+                onNavigateToCompleteProfile = {
+                    navController.navigate(Routes.CompleteProfile.route) {
+                        launchSingleTop = true
+                    }
+                },
                 onNavigateToEditProfile = {
                     navController.navigate(Routes.EditProfile.route)
                 },
                 onLogout = {
                     navController.navigate(Routes.Login.route) {
-                        popUpTo(0) { inclusive = true }
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )
