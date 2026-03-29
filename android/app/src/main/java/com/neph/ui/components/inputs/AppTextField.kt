@@ -22,6 +22,7 @@ fun AppTextField(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
     enabled: Boolean = true,
+    readOnly: Boolean = false,
     singleLine: Boolean = true,
     error: String? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default
@@ -46,6 +47,7 @@ fun AppTextField(
                 .fillMaxWidth()
                 .heightIn(min = 56.dp),
             enabled = enabled,
+            readOnly = readOnly,
             singleLine = singleLine,
             isError = isError,
             textStyle = MaterialTheme.typography.bodyLarge.copy(

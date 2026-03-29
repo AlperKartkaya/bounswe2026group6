@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.neph.features.auth.presentation.CompleteProfileScreen
 import com.neph.features.auth.presentation.ForgotPasswordScreen
 import com.neph.features.auth.presentation.LoginScreen
 import com.neph.features.auth.presentation.PrivacyPolicyScreen
@@ -12,6 +13,7 @@ import com.neph.features.auth.presentation.TermsOfServiceScreen
 import com.neph.features.auth.presentation.VerifyEmailScreen
 import com.neph.features.auth.presentation.WelcomeScreen
 import com.neph.features.privacy.presentation.PrivacyScreen
+import com.neph.features.profile.presentation.EditProfileScreen
 import com.neph.features.profile.presentation.ProfileScreen
 
 @Composable
@@ -73,6 +75,19 @@ fun AppNavGraph(
         composable(Routes.VerifyEmail.route) {
             VerifyEmailScreen(
                 onVerificationSuccess = {
+                    navController.navigate(Routes.CompleteProfile.route) {
+                        popUpTo(Routes.Welcome.route) { inclusive = false }
+                    }
+                },
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Routes.CompleteProfile.route) {
+            CompleteProfileScreen(
+                onComplete = {
                     navController.navigate(Routes.Profile.route) {
                         popUpTo(Routes.Welcome.route) { inclusive = false }
                     }
@@ -115,11 +130,21 @@ fun AppNavGraph(
                 onNavigateToSecurity = {
                     navController.navigate(Routes.Security.route)
                 },
+                onNavigateToEditProfile = {
+                    navController.navigate(Routes.EditProfile.route)
+                },
                 onLogout = {
                     navController.navigate(Routes.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable(Routes.EditProfile.route) {
+            EditProfileScreen(
+                onSave = { navController.popBackStack() },
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

@@ -39,6 +39,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import com.neph.features.profile.data.ProfileData
+import com.neph.features.profile.data.ProfileRepository
 
 @Composable
 fun SignupScreen(
@@ -65,6 +67,7 @@ fun SignupScreen(
     fun handlePhoneChange(input: String) {
         phone = input.filter { it.isDigit() }
     }
+
 
     fun handleSignup() {
         error = ""
@@ -95,6 +98,14 @@ fun SignupScreen(
             error = "You must accept the terms to continue."
             return
         }
+
+        ProfileRepository.saveProfile(
+            ProfileRepository.getProfile().copy(
+                fullName = fullName,
+                email = email,
+                phone = phone
+            )
+        )
 
         loading = true
         scope.launch {
