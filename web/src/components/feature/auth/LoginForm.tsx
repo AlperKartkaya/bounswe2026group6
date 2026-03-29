@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { TextInput } from "@/components/ui/inputs/TextInput";
 import { PasswordInput } from "@/components/ui/inputs/PasswordInput";
 import { Checkbox } from "@/components/ui/selection/Checkbox";
@@ -12,20 +12,43 @@ import { HelperText } from "@/components/ui/display/HelperText";
 import { AuthFooterLinks } from "@/components/feature/auth/AuthFooterLinks";
 import { SocialAuthButtons } from "@/components/feature/auth/SocialAuthButtons";
 import { ApiError } from "@/lib/api";
-import { login, setAccessToken } from "@/lib/auth";
+import { login, resendVerification, setAccessToken } from "@/lib/auth";
 import { fetchMyProfile } from "@/lib/profile";
 import { isValidEmail } from "@/lib/validators/email";
 
 export function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     const [showEmailForm, setShowEmailForm] = React.useState(false);
     const [email, setEmail] = React.useState("");
     const [password, setPassword] = React.useState("");
     const [rememberMe, setRememberMe] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
+    const [resendingVerification, setResendingVerification] = React.useState(false);
+    const [showResendVerification, setShowResendVerification] = React.useState(false);
+    const [resendEmail, setResendEmail] = React.useState("");
     const [error, setError] = React.useState("");
     const [info, setInfo] = React.useState("");
+
+    const safeReturnTo = React.useMemo(() => {
+        const returnTo = searchParams.get("returnTo");
+
+        if (!returnTo) {
+            return null;
+        }
+
+        if (!returnTo.startsWith("/") || returnTo.startsWith("//")) {
+            return null;
+        }
+
+        const blockedRoutes = new Set(["/", "/login", "/signup", "/forgot-password", "/verify-email"]);
+        if (blockedRoutes.has(returnTo)) {
+            return null;
+        }
+
+        return returnTo;
+    }, [searchParams]);
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -50,7 +73,7 @@ export function LoginForm() {
             try {
                 await fetchMyProfile(response.accessToken);
                 setAccessToken(response.accessToken, { rememberMe });
-                router.push("/profile");
+                router.push(safeReturnTo || "/home");
             } catch (profileError) {
                 if (profileError instanceof ApiError && profileError.status === 404) {
                     setAccessToken(response.accessToken, { rememberMe });
@@ -82,6 +105,35 @@ export function LoginForm() {
         setInfo(
             `${provider} sign-in UI is ready. Real OAuth login will be connected after provider credentials and backend callback setup are completed.`
         );
+    };
+
+    const handleResendVerification = async () => {
+        setError("");
+        setInfo("");
+
+        const targetEmail = resendEmail.trim() || email.trim();
+
+        if (!targetEmail) {
+            setError("Please enter your email address to resend verification.");
+            return;
+        }
+
+        if (!isValidEmail(targetEmail)) {
+            setError("Please enter a valid email address.");
+            return;
+        }
+
+        try {
+            setResendingVerification(true);
+            const response = await resendVerification(targetEmail);
+            setInfo(response.message || "Verification email sent. Please check your inbox.");
+        } catch (err) {
+            setError(
+                err instanceof Error ? err.message : "Could not resend verification email."
+            );
+        } finally {
+            setResendingVerification(false);
+        }
     };
 
     return (
@@ -134,14 +186,53 @@ export function LoginForm() {
                             onCheckedChange={setRememberMe}
                         />
 
-                        <button
-                            type="button"
-                            onClick={handleForgotPassword}
-                            className="text-sm font-medium text-[#D84A4A] hover:underline"
-                        >
-                            Forgot password?
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={handleForgotPassword}
+                                className="text-sm font-medium text-[#D84A4A] hover:underline"
+                            >
+                                Forgot password?
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowResendVerification((prev) => !prev);
+                                    setResendEmail(email);
+                                    setError("");
+                                    setInfo("");
+                                }}
+                                className="text-sm font-medium text-[#D84A4A] hover:underline"
+                            >
+                                Verify email?
+                            </button>
+                        </div>
                     </div>
+
+                    {showResendVerification ? (
+                        <div className="rounded-[10px] border border-[#E7E7EA] p-3">
+                            <TextInput
+                                id="resend-verification-email"
+                                label="Email for verification"
+                                type="email"
+                                placeholder="Enter your email"
+                                value={resendEmail}
+                                onChange={(e) => setResendEmail(e.target.value)}
+                            />
+
+                            <div className="mt-2">
+                                <button
+                                    type="button"
+                                    onClick={handleResendVerification}
+                                    disabled={resendingVerification}
+                                    className="text-sm font-medium text-[#D84A4A] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {resendingVerification ? "Sending..." : "Resend verification email"}
+                                </button>
+                            </div>
+                        </div>
+                    ) : null}
 
                     {error ? (
                         <HelperText className="text-[#D84A4A]">

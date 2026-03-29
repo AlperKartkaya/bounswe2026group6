@@ -255,6 +255,7 @@ textarea::placeholder {
     right: 0;
     margin-top: 8px;
     width: 208px;
+    z-index: 60;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-xl);
     background: var(--surface-card);
@@ -275,6 +276,26 @@ textarea::placeholder {
 
 .top-navbar-dropdown-item:hover {
     background: var(--surface-soft);
+}
+
+.top-navbar-dropdown-item.is-login {
+    border: none;
+    background: #ffffff;
+    color: var(--primary-500);
+}
+
+.top-navbar-dropdown-item.is-login:hover {
+    background: var(--primary-100);
+}
+
+.top-navbar-dropdown-item.is-signup {
+    border: 1px solid transparent;
+    background: linear-gradient(135deg, var(--hero-from), var(--hero-via), var(--hero-to));
+    color: #ffffff;
+}
+
+.top-navbar-dropdown-item.is-signup:hover {
+    filter: brightness(1.04);
 }
 
 .top-navbar-dropdown-item.is-danger {

@@ -30,7 +30,6 @@ export default function EmergencyNumbersPage() {
                         ))}
                     </div>
 
-              
                 </SectionCard>
             </div>
         </AppShell>

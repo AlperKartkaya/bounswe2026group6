@@ -1,21 +1,17 @@
-import { PageContainer } from "@/components/layout/PageContainer";
+import { AppShell } from "@/components/layout/AppShell";
 import { SectionCard } from "@/components/ui/display/SectionCard";
 import { SectionHeader } from "@/components/ui/display/SectionHeader";
-import { BackButton } from "@/components/ui/navigation/BackButton";
-
 export default function TermsOfServicePage() {
 
     return (
-        <div className="policy-page">
-            <PageContainer>
-                <div className="policy-content-wrap">
-                    <BackButton className="policy-back-link" />
+        <AppShell title="Terms of Service">
+            <div className="policy-content-wrap">
 
-                    <SectionCard className="policy-card">
-                        <SectionHeader
-                            title="Terms of Service"
-                            subtitle="Last updated: March 2026"
-                        />
+                <SectionCard className="policy-card">
+                    <SectionHeader
+                        title="Terms of Service"
+                        subtitle="Last updated: March 2026"
+                    />
 
                         <div className="policy-body">
                             <p>
@@ -67,9 +63,8 @@ export default function TermsOfServicePage() {
                                 </p>
                             </div>
                         </div>
-                    </SectionCard>
-                </div>
-            </PageContainer>
-        </div>
+                </SectionCard>
+            </div>
+        </AppShell>
     );
 }
