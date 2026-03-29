@@ -13,26 +13,32 @@ export default async function PrivacyPolicyPage({
     searchParams,
 }: PrivacyPolicyPageProps) {
     const params = await searchParams;
-    const backHref = params?.from === "signup" ? "/signup?restore=1" : "/signup";
+    const isFromHome = params?.from === "home";
+    const backHref = isFromHome
+        ? "/home"
+        : params?.from === "signup"
+          ? "/signup?restore=1"
+          : "/signup";
+    const backLabel = isFromHome ? "Back to Home" : "Back to Sign Up";
 
     return (
-        <div className="min-h-screen bg-[#F8F8F9] py-10">
+        <div className="policy-page">
             <PageContainer>
-                <div className="mx-auto max-w-3xl">
+                <div className="policy-content-wrap">
                     <Link
                         href={backHref}
-                        className="text-sm font-medium text-[#D84A4A] hover:underline"
+                        className="policy-back-link"
                     >
-                        ← Back to Sign Up
+                        ← {backLabel}
                     </Link>
 
-                    <SectionCard className="mt-4">
+                    <SectionCard className="policy-card">
                         <SectionHeader
                             title="Privacy Policy"
                             subtitle="Last updated: March 2026"
                         />
 
-                        <div className="space-y-5 text-sm leading-7 text-[#2B2B33]">
+                        <div className="policy-body">
                             <p>
                                 This page is a placeholder Privacy Policy for the NEPH MVP.
                                 It describes how user-provided information may be handled
@@ -40,10 +46,10 @@ export default async function PrivacyPolicyPage({
                             </p>
 
                             <div>
-                                <h3 className="text-base font-semibold">
+                                <h3 className="policy-section-title">
                                     1. Information collected
                                 </h3>
-                                <p className="mt-2">
+                                <p className="policy-section-text">
                                     NEPH may collect information such as name, email,
                                     phone number, and emergency-related profile details
                                     entered by the user.
@@ -51,10 +57,10 @@ export default async function PrivacyPolicyPage({
                             </div>
 
                             <div>
-                                <h3 className="text-base font-semibold">
+                                <h3 className="policy-section-title">
                                     2. Purpose of use
                                 </h3>
-                                <p className="mt-2">
+                                <p className="policy-section-text">
                                     This information is used to support account creation,
                                     emergency preparedness features, and user coordination
                                     flows within the MVP.
@@ -62,10 +68,10 @@ export default async function PrivacyPolicyPage({
                             </div>
 
                             <div>
-                                <h3 className="text-base font-semibold">
+                                <h3 className="policy-section-title">
                                     3. Data protection
                                 </h3>
-                                <p className="mt-2">
+                                <p className="policy-section-text">
                                     As an academic MVP, NEPH is still under development.
                                     Full production-grade privacy safeguards may not yet be
                                     fully implemented.
@@ -73,10 +79,10 @@ export default async function PrivacyPolicyPage({
                             </div>
 
                             <div>
-                                <h3 className="text-base font-semibold">
+                                <h3 className="policy-section-title">
                                     4. Policy updates
                                 </h3>
-                                <p className="mt-2">
+                                <p className="policy-section-text">
                                     This privacy policy may be updated in later project
                                     phases as the platform and backend capabilities evolve.
                                 </p>
