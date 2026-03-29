@@ -79,8 +79,6 @@ object AuthRepository {
             AuthSessionStore.clearPendingVerificationEmail()
             LoginDestination.PROFILE
         } catch (cancellationException: CancellationException) {
-            AuthSessionStore.clearAccessToken()
-            ProfileRepository.clearProfile()
             throw cancellationException
         } catch (error: ApiException) {
             when (error.status) {
@@ -94,14 +92,10 @@ object AuthRepository {
                     throw error
                 }
                 else -> {
-                    AuthSessionStore.clearAccessToken()
-                    ProfileRepository.clearProfile()
                     throw error
                 }
             }
         } catch (error: Exception) {
-            AuthSessionStore.clearAccessToken()
-            ProfileRepository.clearProfile()
             throw error
         }
     }

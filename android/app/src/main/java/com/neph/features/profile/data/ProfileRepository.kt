@@ -6,6 +6,7 @@ import com.neph.core.network.JsonHttpClient
 import com.neph.features.auth.data.AuthSessionStore
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
 
 object ProfileRepository {
     private const val PrefsName = "neph_profile"
@@ -75,99 +76,116 @@ object ProfileRepository {
         val normalizedName = profile.fullName?.trim().orEmpty()
         val (firstName, lastName) = splitFullName(normalizedName)
 
-        JsonHttpClient.request(
-            path = "/profiles/me",
-            method = "PATCH",
-            token = token,
-            body = JSONObject().apply {
-                put("firstName", firstName)
-                put("lastName", lastName)
-                putNullable("phoneNumber", profile.phone?.trim()?.takeIf(String::isNotBlank))
-            }
-        )
+        return try {
+            JsonHttpClient.request(
+                path = "/profiles/me",
+                method = "PATCH",
+                token = token,
+                body = JSONObject().apply {
+                    put("firstName", firstName)
+                    put("lastName", lastName)
+                    putNullable("phoneNumber", profile.phone?.trim()?.takeIf(String::isNotBlank))
+                }
+            )
 
-        JsonHttpClient.request(
-            path = "/profiles/me/physical",
-            method = "PATCH",
-            token = token,
-            body = JSONObject().apply {
-                calculateAge(profile.birthDate)?.let { put("age", it) }
-                putNullable("gender", profile.gender)
-                profile.height?.let { put("height", it.toDouble()) }
-                profile.weight?.let { put("weight", it.toDouble()) }
-            }
-        )
+            JsonHttpClient.request(
+                path = "/profiles/me/physical",
+                method = "PATCH",
+                token = token,
+                body = JSONObject().apply {
+                    calculateAge(profile.birthDate)?.let { put("age", it) }
+                    putNullable("gender", profile.gender)
+                    profile.height?.let { put("height", it.toDouble()) }
+                    profile.weight?.let { put("weight", it.toDouble()) }
+                }
+            )
 
-        JsonHttpClient.request(
-            path = "/profiles/me/health",
-            method = "PATCH",
-            token = token,
-            body = JSONObject().apply {
-                put("medicalConditions", JSONArray(parseListField(profile.medicalHistory)))
-                put("chronicDiseases", JSONArray(parseListField(profile.chronicDiseases)))
-                put("allergies", JSONArray(parseListField(profile.allergies)))
-                putNullable("bloodType", profile.bloodType)
-            }
-        )
+            JsonHttpClient.request(
+                path = "/profiles/me/health",
+                method = "PATCH",
+                token = token,
+                body = JSONObject().apply {
+                    put("medicalConditions", JSONArray(parseListField(profile.medicalHistory)))
+                    put("chronicDiseases", JSONArray(parseListField(profile.chronicDiseases)))
+                    put("allergies", JSONArray(parseListField(profile.allergies)))
+                    putNullable("bloodType", profile.bloodType)
+                }
+            )
 
-        JsonHttpClient.request(
-            path = "/profiles/me/location",
-            method = "PATCH",
-            token = token,
-            body = JSONObject().apply {
-                putNullable("country", profile.country?.takeIf(String::isNotBlank)?.let { locationData[it]?.label ?: it })
-                putNullable(
-                    "city",
-                    profile.city?.takeIf(String::isNotBlank)?.let {
-                        profile.country?.let { countryKey ->
-                            locationData[countryKey]?.cities?.get(it)?.label
-                        } ?: it
-                    }
+            JsonHttpClient.request(
+                path = "/profiles/me/location",
+                method = "PATCH",
+                token = token,
+                body = JSONObject().apply {
+                    putNullable("country", profile.country?.takeIf(String::isNotBlank)?.let { locationData[it]?.label ?: it })
+                    putNullable(
+                        "city",
+                        profile.city?.takeIf(String::isNotBlank)?.let {
+                            profile.country?.let { countryKey ->
+                                locationData[countryKey]?.cities?.get(it)?.label
+                            } ?: it
+                        }
+                    )
+                    putNullable(
+                        "address",
+                        buildAddress(profile.district, profile.neighborhood, profile.extraAddress)
+                    )
+                }
+            )
+
+            JsonHttpClient.request(
+                path = "/profiles/me/privacy",
+                method = "PATCH",
+                token = token,
+                body = JSONObject().apply {
+                    put("locationSharingEnabled", profile.shareLocation ?: false)
+                }
+            )
+
+            JsonHttpClient.request(
+                path = "/profiles/me/profession",
+                method = "PATCH",
+                token = token,
+                body = JSONObject().apply {
+                    putNullable("profession", profile.profession)
+                }
+            )
+
+            JsonHttpClient.request(
+                path = "/profiles/me/expertise-areas",
+                method = "PUT",
+                token = token,
+                body = JSONObject().apply {
+                    put("expertiseAreas", JSONArray(profile.expertise))
+                }
+            )
+
+            saveProfile(profile)
+
+            val refreshed = fetchAndCacheRemoteProfile().copy(
+                birthDate = profile.birthDate,
+                district = profile.district,
+                neighborhood = profile.neighborhood,
+                extraAddress = profile.extraAddress
+            )
+            saveProfile(refreshed)
+            refreshed
+        } catch (cancellationException: CancellationException) {
+            throw cancellationException
+        } catch (error: Exception) {
+            try {
+                val refreshed = fetchAndCacheRemoteProfile().copy(
+                    birthDate = profile.birthDate,
+                    district = profile.district,
+                    neighborhood = profile.neighborhood,
+                    extraAddress = profile.extraAddress
                 )
-                putNullable(
-                    "address",
-                    buildAddress(profile.district, profile.neighborhood, profile.extraAddress)
-                )
+                saveProfile(refreshed)
+            } catch (_: Exception) {
+                // Keep the last known local state if backend refresh also fails.
             }
-        )
-
-        JsonHttpClient.request(
-            path = "/profiles/me/privacy",
-            method = "PATCH",
-            token = token,
-            body = JSONObject().apply {
-                put("locationSharingEnabled", profile.shareLocation ?: false)
-            }
-        )
-
-        JsonHttpClient.request(
-            path = "/profiles/me/profession",
-            method = "PATCH",
-            token = token,
-            body = JSONObject().apply {
-                putNullable("profession", profile.profession)
-            }
-        )
-
-        JsonHttpClient.request(
-            path = "/profiles/me/expertise-areas",
-            method = "PUT",
-            token = token,
-            body = JSONObject().apply {
-                put("expertiseAreas", JSONArray(profile.expertise))
-            }
-        )
-
-        saveProfile(profile)
-
-        val refreshed = fetchAndCacheRemoteProfile().copy(
-            birthDate = profile.birthDate,
-            district = profile.district,
-            neighborhood = profile.neighborhood,
-            extraAddress = profile.extraAddress
-        )
-        saveProfile(refreshed)
-        return refreshed
+            throw error
+        }
     }
 
     private fun persistProfile(profile: ProfileData) {
