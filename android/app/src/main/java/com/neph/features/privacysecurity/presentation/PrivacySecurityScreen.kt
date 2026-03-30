@@ -1,4 +1,4 @@
-package com.neph.features.profile.presentation
+package com.neph.features.privacysecurity.presentation
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -7,26 +7,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.neph.navigation.Routes
-import com.neph.ui.components.buttons.SecondaryButton
+import androidx.compose.ui.tooling.preview.Preview
 import com.neph.ui.components.display.SectionCard
 import com.neph.ui.components.display.SectionHeader
-import com.neph.ui.layout.AppDrawerScaffold
+import com.neph.ui.layout.AppScaffold
 import com.neph.ui.theme.LocalNephSpacing
+import com.neph.ui.theme.NephTheme
 
 @Composable
-fun ProfileScreen(
-    onNavigateToRoute: (String) -> Unit,
-    onOpenSettings: () -> Unit,
-    onNavigateToEditProfile: () -> Unit
+fun PrivacySecurityScreen(
+    onNavigateBack: () -> Unit
 ) {
     val spacing = LocalNephSpacing.current
 
-    AppDrawerScaffold(
-        title = "Profile",
-        currentRoute = Routes.Profile.route,
-        onNavigateToRoute = onNavigateToRoute,
-        onOpenSettings = onOpenSettings
+    AppScaffold(
+        title = "Privacy & Security",
+        onNavigateBack = onNavigateBack
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -34,22 +30,24 @@ fun ProfileScreen(
         ) {
             SectionCard {
                 SectionHeader(
-                    title = "Profile",
+                    title = "Privacy & Security",
                     subtitle = "Temporary placeholder screen."
                 )
 
                 Text(
-                    text = "Profile details and account controls will be expanded in a later step.",
+                    text = "Privacy and security controls will be added in a later step.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            SecondaryButton(
-                text = "Edit Profile",
-                onClick = onNavigateToEditProfile,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun PrivacySecurityScreenPreview() {
+    NephTheme {
+        PrivacySecurityScreen(onNavigateBack = {})
     }
 }

@@ -1,55 +1,55 @@
-package com.neph.features.profile.presentation
+package com.neph.features.emergencyinfo.presentation
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import com.neph.navigation.Routes
-import com.neph.ui.components.buttons.SecondaryButton
 import com.neph.ui.components.display.SectionCard
 import com.neph.ui.components.display.SectionHeader
 import com.neph.ui.layout.AppDrawerScaffold
 import com.neph.ui.theme.LocalNephSpacing
+import com.neph.ui.theme.NephTheme
 
 @Composable
-fun ProfileScreen(
+fun EmergencyInfoScreen(
     onNavigateToRoute: (String) -> Unit,
-    onOpenSettings: () -> Unit,
-    onNavigateToEditProfile: () -> Unit
+    onOpenSettings: () -> Unit
 ) {
     val spacing = LocalNephSpacing.current
 
     AppDrawerScaffold(
-        title = "Profile",
-        currentRoute = Routes.Profile.route,
+        title = "Emergency Info",
+        currentRoute = Routes.EmergencyInfo.route,
         onNavigateToRoute = onNavigateToRoute,
         onOpenSettings = onOpenSettings
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(spacing.lg)
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.lg)) {
             SectionCard {
                 SectionHeader(
-                    title = "Profile",
-                    subtitle = "Temporary placeholder screen."
+                    title = "Emergency Info",
+                    subtitle = "This page will provide quick emergency guidance and personal readiness info."
                 )
 
                 Text(
-                    text = "Profile details and account controls will be expanded in a later step.",
+                    text = "Emergency details and preparedness content will be added later.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            SecondaryButton(
-                text = "Edit Profile",
-                onClick = onNavigateToEditProfile,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun EmergencyInfoScreenPreview() {
+    NephTheme {
+        EmergencyInfoScreen(
+            onNavigateToRoute = {},
+            onOpenSettings = {}
+        )
     }
 }

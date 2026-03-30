@@ -1,6 +1,15 @@
 package com.neph.navigation
 
 sealed class Routes(val route: String) {
+    data object Home : Routes("home")
+    data object RequestHelp : Routes("request_help")
+    data object MyHelpRequests : Routes("my_help_requests")
+    data object AssignedRequest : Routes("assigned_request")
+    data object EmergencyInfo : Routes("emergency_info")
+    data object GatheringAreas : Routes("gathering_areas")
+    data object Notifications : Routes("notifications")
+    data object Settings : Routes("settings")
+    data object PrivacySecurity : Routes("privacy_security")
     data object Welcome : Routes("welcome")
     data object Login : Routes("login")
     data object Signup : Routes("signup")
