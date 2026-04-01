@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Menu
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DrawerValue
@@ -35,22 +35,6 @@ import androidx.compose.ui.unit.dp
 import com.neph.navigation.Routes
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.launch
-
-private data class DrawerItem(
-    val route: String,
-    val label: String
-)
-
-private val drawerItems = listOf(
-    DrawerItem(Routes.Home.route, "Home"),
-    DrawerItem(Routes.MyHelpRequests.route, "My Help Requests"),
-    DrawerItem(Routes.AssignedRequest.route, "Assigned Request"),
-    DrawerItem(Routes.Profile.route, "Profile"),
-    DrawerItem(Routes.EmergencyInfo.route, "Emergency Info"),
-    DrawerItem(Routes.GatheringAreas.route, "Gathering Areas"),
-    DrawerItem(Routes.Notifications.route, "Notifications"),
-    DrawerItem(Routes.Settings.route, "Settings")
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,10 +67,10 @@ fun AppDrawerScaffold(
 
                 Spacer(modifier = Modifier.height(spacing.lg))
 
-                drawerItems.forEach { item ->
+                Routes.drawerItems.forEach { item ->
                     NavigationDrawerItem(
                         label = {
-                            Text(text = item.label)
+                            Text(text = item.drawerLabel.orEmpty())
                         },
                         selected = currentRoute == item.route,
                         onClick = {
@@ -129,7 +113,7 @@ fun AppDrawerScaffold(
                                 }
                             ) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Menu,
+                                    imageVector = Icons.Filled.Menu,
                                     contentDescription = "Open menu"
                                 )
                             }

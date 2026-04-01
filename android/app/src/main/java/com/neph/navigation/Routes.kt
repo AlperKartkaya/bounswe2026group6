@@ -1,14 +1,17 @@
 package com.neph.navigation
 
-sealed class Routes(val route: String) {
-    data object Home : Routes("home")
+sealed class Routes(
+    val route: String,
+    val drawerLabel: String? = null
+) {
+    data object Home : Routes("home", "Home")
     data object RequestHelp : Routes("request_help")
-    data object MyHelpRequests : Routes("my_help_requests")
-    data object AssignedRequest : Routes("assigned_request")
-    data object EmergencyInfo : Routes("emergency_info")
-    data object GatheringAreas : Routes("gathering_areas")
-    data object Notifications : Routes("notifications")
-    data object Settings : Routes("settings")
+    data object MyHelpRequests : Routes("my_help_requests", "My Help Requests")
+    data object AssignedRequest : Routes("assigned_request", "Assigned Request")
+    data object EmergencyInfo : Routes("emergency_info", "Emergency Info")
+    data object GatheringAreas : Routes("gathering_areas", "Gathering Areas")
+    data object Notifications : Routes("notifications", "Notifications")
+    data object Settings : Routes("settings", "Settings")
     data object PrivacySecurity : Routes("privacy_security")
     data object Welcome : Routes("welcome")
     data object Login : Routes("login")
@@ -18,8 +21,19 @@ sealed class Routes(val route: String) {
     data object ForgotPassword : Routes("forgot_password")
     data object TermsOfService : Routes("terms_of_service")
     data object PrivacyPolicy : Routes("privacy_policy")
-    data object Privacy : Routes("privacy")
-    data object Profile : Routes("profile")
+    data object Profile : Routes("profile", "Profile")
     data object EditProfile : Routes("edit_profile")
-    data object Security : Routes("security")
+
+    companion object {
+        val drawerItems = listOf(
+            Home,
+            MyHelpRequests,
+            AssignedRequest,
+            Profile,
+            EmergencyInfo,
+            GatheringAreas,
+            Notifications,
+            Settings
+        )
+    }
 }
