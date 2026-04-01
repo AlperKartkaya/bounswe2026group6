@@ -1,6 +1,7 @@
 package com.neph.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -44,19 +45,14 @@ fun AppNavGraph(
     fun canAccessRoute(route: String): Boolean {
         if (isAuthenticated()) return true
 
-        return route in setOf(
-            Routes.Home.route,
-            Routes.News.route,
-            Routes.EmergencyInfo.route,
-            Routes.RequestHelp.route,
-            Routes.Welcome.route,
-            Routes.Login.route,
-            Routes.Signup.route,
-            Routes.VerifyEmail.route,
-            Routes.ForgotPassword.route,
-            Routes.TermsOfService.route,
-            Routes.PrivacyPolicy.route
+        val protectedRoutes = setOf(
+            Routes.Profile.route,
+            Routes.EditProfile.route,
+            Routes.Settings.route,
+            Routes.PrivacySecurity.route
         )
+
+        return route !in protectedRoutes
     }
 
     fun navigateToDrawerRoute(route: String) {
@@ -162,6 +158,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.Profile.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             ProfileScreen(
                 onNavigateToRoute = ::navigateToDrawerRoute,
                 onOpenSettings = {
@@ -176,6 +179,7 @@ fun AppNavGraph(
                     navController.navigate(Routes.EditProfile.route)
                 },
                 onLogout = {
+                    AuthRepository.logout()
                     navController.navigate(Routes.Welcome.route) {
                         popUpTo(navController.graph.id) { inclusive = true }
                         launchSingleTop = true
@@ -226,6 +230,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.Settings.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             SettingsScreen(
                 onNavigateToRoute = ::navigateToDrawerRoute,
                 onNavigateToPrivacySecurity = {
@@ -242,6 +253,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.PrivacySecurity.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             PrivacySecurityScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -374,6 +392,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.EditProfile.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             EditProfileScreen(
                 onSave = { navController.popBackStack() },
                 onNavigateBack = { navController.popBackStack() }
