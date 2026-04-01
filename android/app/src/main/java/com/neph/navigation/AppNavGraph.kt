@@ -5,6 +5,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.neph.features.assignedrequest.presentation.AssignedRequestScreen
+import com.neph.features.auth.data.AuthRepository
 import com.neph.features.auth.presentation.CompleteProfileScreen
 import com.neph.features.auth.presentation.ForgotPasswordScreen
 import com.neph.features.auth.presentation.LoginScreen
@@ -18,7 +19,6 @@ import com.neph.features.gatheringareas.presentation.GatheringAreasScreen
 import com.neph.features.home.presentation.HomeScreen
 import com.neph.features.myhelprequests.presentation.MyHelpRequestsScreen
 import com.neph.features.notifications.presentation.NotificationsScreen
-import com.neph.features.privacy.presentation.PrivacyScreen
 import com.neph.features.privacysecurity.presentation.PrivacySecurityScreen
 import com.neph.features.profile.presentation.EditProfileScreen
 import com.neph.features.profile.presentation.ProfileScreen
@@ -131,6 +131,7 @@ fun AppNavGraph(
                     navController.navigate(Routes.PrivacySecurity.route)
                 },
                 onLogout = {
+                    AuthRepository.logout()
                     navController.navigate(Routes.Welcome.route) {
                         popUpTo(navController.graph.id) { inclusive = true }
                         launchSingleTop = true
@@ -222,7 +223,7 @@ fun AppNavGraph(
         composable(Routes.VerifyEmail.route) {
             VerifyEmailScreen(
                 onContinueToLogin = {
-                    navController.navigate(Routes.Login.route) {
+                    navController.navigate(Routes.CompleteProfile.route) {
                         popUpTo(Routes.Welcome.route) { inclusive = false }
                         launchSingleTop = true
                     }
@@ -275,22 +276,6 @@ fun AppNavGraph(
             EditProfileScreen(
                 onSave = { navController.popBackStack() },
                 onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Routes.Privacy.route) {
-            PrivacyScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
-        }
-
-        composable(Routes.Security.route) {
-            SecurityPlaceholderScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
             )
         }
     }
