@@ -17,19 +17,19 @@ import com.neph.features.auth.data.AuthRepository
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.locationData
 import com.neph.features.profile.data.toEditableString
-import com.neph.ui.components.buttons.PrimaryButton
+import com.neph.navigation.Routes
 import com.neph.ui.components.buttons.SecondaryButton
 import com.neph.ui.components.display.HelperText
 import com.neph.ui.components.display.SectionCard
 import com.neph.ui.components.display.SectionHeader
-import com.neph.ui.layout.AppScaffold
+import com.neph.ui.layout.AppDrawerScaffold
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.CancellationException
 
 @Composable
 fun ProfileScreen(
-    onNavigateToPrivacy: () -> Unit,
-    onNavigateToSecurity: () -> Unit,
+    onNavigateToRoute: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     onNavigateToCompleteProfile: () -> Unit,
     onNavigateToEditProfile: () -> Unit,
     onLogout: () -> Unit
@@ -62,11 +62,17 @@ fun ProfileScreen(
         }
     }
 
-    AppScaffold(title = "Profile") {
+    AppDrawerScaffold(
+        title = "Profile",
+        currentRoute = Routes.Profile.route,
+        onNavigateToRoute = onNavigateToRoute,
+        onOpenSettings = onOpenSettings
+    ) {
         if (loading) {
             HelperText(text = "Loading your profile...")
         } else {
             Column(
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(spacing.lg)
             ) {
                 val countryLabel = profile.country?.let { locationData[it]?.label ?: it }
@@ -142,27 +148,6 @@ fun ProfileScreen(
                 SecondaryButton(
                     text = "Edit Profile",
                     onClick = onNavigateToEditProfile,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                SecondaryButton(
-                    text = "Privacy",
-                    onClick = onNavigateToPrivacy,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                SecondaryButton(
-                    text = "Security",
-                    onClick = onNavigateToSecurity,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                PrimaryButton(
-                    text = "Log Out",
-                    onClick = {
-                        AuthRepository.logout()
-                        onLogout()
-                    },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
