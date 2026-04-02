@@ -116,8 +116,8 @@ async function createAssignment(volunteerId, requestId) {
 async function updateRequestStatus(requestId, status) {
   const sql = `
     UPDATE help_requests
-    SET status = $2,
-        resolved_at = CASE WHEN $2 = 'RESOLVED' THEN CURRENT_TIMESTAMP ELSE resolved_at END
+    SET status = $2::request_status,
+        resolved_at = CASE WHEN $2::request_status = 'RESOLVED' THEN CURRENT_TIMESTAMP ELSE resolved_at END
     WHERE request_id = $1
     RETURNING *;
   `;
@@ -154,8 +154,7 @@ async function getAssignmentById(assignmentId) {
 
 async function cancelAssignment(assignmentId) {
   const sql = `
-    UPDATE assignments
-    SET is_cancelled = TRUE
+    DELETE FROM assignments
     WHERE assignment_id = $1
     RETURNING *;
   `;
