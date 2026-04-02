@@ -1,11 +1,13 @@
 package com.neph.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.neph.features.assignedrequest.presentation.AssignedRequestScreen
 import com.neph.features.auth.data.AuthRepository
+import com.neph.features.auth.data.AuthSessionStore
 import com.neph.features.auth.presentation.CompleteProfileScreen
 import com.neph.features.auth.presentation.ForgotPasswordScreen
 import com.neph.features.auth.presentation.LoginScreen
@@ -18,8 +20,10 @@ import com.neph.features.emergencyinfo.presentation.EmergencyInfoScreen
 import com.neph.features.gatheringareas.presentation.GatheringAreasScreen
 import com.neph.features.home.presentation.HomeScreen
 import com.neph.features.myhelprequests.presentation.MyHelpRequestsScreen
+import com.neph.features.news.presentation.NewsScreen
 import com.neph.features.notifications.presentation.NotificationsScreen
 import com.neph.features.privacysecurity.presentation.PrivacySecurityScreen
+import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.presentation.EditProfileScreen
 import com.neph.features.profile.presentation.ProfileScreen
 import com.neph.features.requesthelp.presentation.RequestHelpScreen
@@ -30,7 +34,33 @@ fun AppNavGraph(
     navController: NavHostController,
     startDestination: String = Routes.Welcome.route
 ) {
+    fun isAuthenticated(): Boolean = AuthSessionStore.getAccessToken().isNullOrBlank().not()
+
+    fun navigateToLogin() {
+        navController.navigate(Routes.Login.route) {
+            launchSingleTop = true
+        }
+    }
+
+    fun canAccessRoute(route: String): Boolean {
+        if (isAuthenticated()) return true
+
+        val protectedRoutes = setOf(
+            Routes.Profile.route,
+            Routes.EditProfile.route,
+            Routes.Settings.route,
+            Routes.PrivacySecurity.route
+        )
+
+        return route !in protectedRoutes
+    }
+
     fun navigateToDrawerRoute(route: String) {
+        if (!canAccessRoute(route)) {
+            navigateToLogin()
+            return
+        }
+
         navController.navigate(route) {
             popUpTo(Routes.Home.route) {
                 saveState = true
@@ -40,19 +70,72 @@ fun AppNavGraph(
         }
     }
 
+    fun resolveProfileBadgeText(authenticated: Boolean): String {
+        if (!authenticated) return ""
+
+        val fullName = ProfileRepository.getProfile().fullName.orEmpty().trim()
+        if (fullName.isBlank()) return "PP"
+
+        val parts = fullName.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val initials = when {
+            parts.isEmpty() -> ""
+            parts.size == 1 -> parts.first().take(2)
+            else -> "${parts.first().first()}${parts.last().first()}"
+        }
+
+        return initials.uppercase().ifBlank { "PP" }
+    }
+
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
         composable(Routes.Home.route) {
+            val authenticated = isAuthenticated()
+            val profileBadgeText = resolveProfileBadgeText(authenticated)
+
             HomeScreen(
                 onRequestHelp = {
                     navController.navigate(Routes.RequestHelp.route)
                 },
                 onNavigateToRoute = ::navigateToDrawerRoute,
-                onOpenSettings = {
-                    navigateToDrawerRoute(Routes.Settings.route)
-                }
+                onOpenSettings = if (authenticated) {
+                    { navigateToDrawerRoute(Routes.Settings.route) }
+                } else {
+                    null
+                },
+                onProfileClick = {
+                    if (authenticated) {
+                        navigateToDrawerRoute(Routes.Profile.route)
+                    } else {
+                        navigateToLogin()
+                    }
+                },
+                profileBadgeText = profileBadgeText,
+                isAuthenticated = authenticated
+            )
+        }
+
+        composable(Routes.News.route) {
+            val authenticated = isAuthenticated()
+            val profileBadgeText = resolveProfileBadgeText(authenticated)
+
+            NewsScreen(
+                onNavigateToRoute = ::navigateToDrawerRoute,
+                onOpenSettings = if (authenticated) {
+                    { navigateToDrawerRoute(Routes.Settings.route) }
+                } else {
+                    null
+                },
+                onProfileClick = {
+                    if (authenticated) {
+                        navigateToDrawerRoute(Routes.Profile.route)
+                    } else {
+                        navigateToLogin()
+                    }
+                },
+                profileBadgeText = profileBadgeText,
+                isAuthenticated = authenticated
             )
         }
 
@@ -75,6 +158,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.Profile.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             ProfileScreen(
                 onNavigateToRoute = ::navigateToDrawerRoute,
                 onOpenSettings = {
@@ -89,6 +179,7 @@ fun AppNavGraph(
                     navController.navigate(Routes.EditProfile.route)
                 },
                 onLogout = {
+                    AuthRepository.logout()
                     navController.navigate(Routes.Welcome.route) {
                         popUpTo(navController.graph.id) { inclusive = true }
                         launchSingleTop = true
@@ -98,11 +189,25 @@ fun AppNavGraph(
         }
 
         composable(Routes.EmergencyInfo.route) {
+            val authenticated = isAuthenticated()
+            val profileBadgeText = resolveProfileBadgeText(authenticated)
+
             EmergencyInfoScreen(
                 onNavigateToRoute = ::navigateToDrawerRoute,
-                onOpenSettings = {
-                    navigateToDrawerRoute(Routes.Settings.route)
-                }
+                onOpenSettings = if (authenticated) {
+                    { navigateToDrawerRoute(Routes.Settings.route) }
+                } else {
+                    null
+                },
+                onProfileClick = {
+                    if (authenticated) {
+                        navigateToDrawerRoute(Routes.Profile.route)
+                    } else {
+                        navigateToLogin()
+                    }
+                },
+                profileBadgeText = profileBadgeText,
+                isAuthenticated = authenticated
             )
         }
 
@@ -125,6 +230,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.Settings.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             SettingsScreen(
                 onNavigateToRoute = ::navigateToDrawerRoute,
                 onNavigateToPrivacySecurity = {
@@ -141,6 +253,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.PrivacySecurity.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             PrivacySecurityScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -273,6 +392,13 @@ fun AppNavGraph(
         }
 
         composable(Routes.EditProfile.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             EditProfileScreen(
                 onSave = { navController.popBackStack() },
                 onNavigateBack = { navController.popBackStack() }
