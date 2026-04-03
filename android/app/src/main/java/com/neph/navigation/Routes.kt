@@ -41,6 +41,7 @@ sealed class Routes(
         val guestDrawerItems = listOf(
             Home,
             News,
+            MyHelpRequests,
             EmergencyInfo
         )
 

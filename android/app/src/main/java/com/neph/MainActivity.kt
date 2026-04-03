@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.compose.rememberNavController
+import com.neph.features.availability.data.AvailabilityRepository
 import com.neph.features.auth.data.AuthSessionStore
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.navigation.AppNavGraph
@@ -16,6 +17,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AuthSessionStore.initialize(applicationContext)
+        AvailabilityRepository.initialize(applicationContext)
         ProfileRepository.initialize(applicationContext)
         setContent {
             NephApp()
@@ -32,7 +34,7 @@ fun NephApp() {
             startDestination = if (AuthSessionStore.getAccessToken().isNullOrBlank()) {
                 Routes.Welcome.route
             } else {
-                Routes.Profile.route
+                Routes.Home.route
             }
         )
     }

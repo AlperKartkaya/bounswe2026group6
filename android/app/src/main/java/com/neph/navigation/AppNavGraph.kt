@@ -46,6 +46,7 @@ fun AppNavGraph(
         if (isAuthenticated()) return true
 
         val protectedRoutes = setOf(
+            Routes.AssignedRequest.route,
             Routes.Profile.route,
             Routes.EditProfile.route,
             Routes.Settings.route,
@@ -104,6 +105,9 @@ fun AppNavGraph(
                 } else {
                     null
                 },
+                onNavigateToLogin = {
+                    navigateToLogin()
+                },
                 onProfileClick = {
                     if (authenticated) {
                         navigateToDrawerRoute(Routes.Profile.route)
@@ -140,19 +144,33 @@ fun AppNavGraph(
         }
 
         composable(Routes.MyHelpRequests.route) {
+            val authenticated = isAuthenticated()
             MyHelpRequestsScreen(
                 onNavigateToRoute = ::navigateToDrawerRoute,
-                onOpenSettings = {
-                    navigateToDrawerRoute(Routes.Settings.route)
-                }
+                onOpenSettings = if (authenticated) {
+                    { navigateToDrawerRoute(Routes.Settings.route) }
+                } else {
+                    null
+                },
+                isAuthenticated = authenticated
             )
         }
 
         composable(Routes.AssignedRequest.route) {
+            if (!isAuthenticated()) {
+                LaunchedEffect(Unit) {
+                    navigateToLogin()
+                }
+                return@composable
+            }
+
             AssignedRequestScreen(
                 onNavigateToRoute = ::navigateToDrawerRoute,
                 onOpenSettings = {
                     navigateToDrawerRoute(Routes.Settings.route)
+                },
+                onNavigateToLogin = {
+                    navigateToLogin()
                 }
             )
         }
@@ -271,6 +289,9 @@ fun AppNavGraph(
             RequestHelpScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onNavigateToLogin = {
+                    navigateToLogin()
                 }
             )
         }
