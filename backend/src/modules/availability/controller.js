@@ -4,6 +4,7 @@ const {
   getMyAssignment,
   cancelMyAssignment,
   resolveMyAssignment,
+  getAvailabilityStatus,
 } = require('./service');
 const {
   validate,
@@ -91,10 +92,21 @@ async function handleResolveAssignment(req, res) {
   }
 }
 
+async function handleGetAvailabilityStatus(req, res) {
+  try {
+    const result = await getAvailabilityStatus(req.user.userId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error in getAvailabilityStatus:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: error.message });
+  }
+}
+
 module.exports = {
   handleSetAvailability,
   handleSyncAvailability,
   handleGetMyAssignment,
   handleCancelAssignment,
   handleResolveAssignment,
+  handleGetAvailabilityStatus,
 };
