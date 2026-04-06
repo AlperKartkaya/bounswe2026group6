@@ -20,7 +20,6 @@ import com.neph.features.auth.data.AuthRepository
 import com.neph.features.auth.data.AuthSessionStore
 import com.neph.features.availability.data.AvailabilityRepository
 import com.neph.navigation.Routes
-import com.neph.ui.components.buttons.PrimaryButton
 import com.neph.ui.components.buttons.SecondaryButton
 import com.neph.ui.components.display.HelperText
 import com.neph.ui.components.display.SectionCard
@@ -44,7 +43,6 @@ fun AssignedRequestScreen(
     var infoMessage by remember { mutableStateOf("") }
     var currentRequest by remember { mutableStateOf<AssignedRequestUiModel?>(null) }
     var refreshVersion by remember { mutableStateOf(0) }
-    var resolving by remember { mutableStateOf(false) }
     var cancelling by remember { mutableStateOf(false) }
 
     fun startLoading() {
@@ -87,19 +85,22 @@ fun AssignedRequestScreen(
         }
     }
 
-    suspend fun runAssignmentAction(action: suspend () -> AssignedRequestUiModel?, successMessage: String) {
+    suspend fun runCancelAction(assignmentId: String) {
         error = ""
         infoMessage = ""
 
         try {
-            val nextAssignment = action()
+            val nextAssignment = AssignedRequestRepository.cancelAssignment(
+                token = token,
+                assignmentId = assignmentId
+            )
             currentRequest = nextAssignment
             AvailabilityRepository.setAvailabilityStateForUi(
                 AvailabilityRepository.getAvailabilityState().copy(
                     assignmentId = nextAssignment?.assignmentId
                 )
             )
-            infoMessage = successMessage
+            infoMessage = "Assignment released successfully."
         } catch (cancellationException: CancellationException) {
             throw cancellationException
         } catch (errorResponse: ApiException) {
@@ -176,22 +177,11 @@ fun AssignedRequestScreen(
                     SectionCard {
                         Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                             SectionHeader(
-                                title = request.helpType,
+                                title = request.helpTypeSummary,
                                 subtitle = request.requesterName
+                                    ?: request.contactFullName
                                     ?: request.requesterEmail
                                     ?: "Requester details unavailable"
-                            )
-
-                            Text(
-                                text = request.shortDescription,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            Text(
-                                text = "Location: ${request.locationLabel}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface
                             )
 
                             Text(
@@ -199,14 +189,6 @@ fun AssignedRequestScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )
-
-                            request.requesterEmail?.let {
-                                Text(
-                                    text = "Requester email: $it",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
 
                             request.assignedAt?.let {
                                 Text(
@@ -219,10 +201,95 @@ fun AssignedRequestScreen(
                     }
 
                     SectionCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                            SectionHeader(
+                                title = "Help Types",
+                                subtitle = "Support requested by the requester."
+                            )
+
+                            Text(
+                                text = request.helpTypes.joinToString(", ").ifBlank { request.helpType },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            request.otherHelpText?.let {
+                                DetailLine(label = "Other help detail", value = it)
+                            }
+                        }
+                    }
+
+                    SectionCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                            SectionHeader(
+                                title = "Situation Details",
+                                subtitle = "Submitted details from the request form."
+                            )
+
+                            DetailLine(label = "Description", value = request.description)
+
+                            request.affectedPeopleCount?.let {
+                                DetailLine(label = "Affected people count", value = it.toString())
+                            }
+
+                            if (request.riskFlags.isNotEmpty()) {
+                                DetailLine(label = "Risk flags", value = request.riskFlags.joinToString(", "))
+                            }
+
+                            if (request.vulnerableGroups.isNotEmpty()) {
+                                DetailLine(
+                                    label = "Vulnerable groups",
+                                    value = request.vulnerableGroups.joinToString(", ")
+                                )
+                            }
+
+                            request.bloodType?.let {
+                                DetailLine(label = "Blood type", value = it)
+                            }
+                        }
+                    }
+
+                    SectionCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                            SectionHeader(
+                                title = "Location",
+                                subtitle = "Location details provided in the request form."
+                            )
+
+                            DetailLine(label = "Location", value = request.locationLabel)
+                        }
+                    }
+
+                    SectionCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                            SectionHeader(
+                                title = "Contact",
+                                subtitle = "Use these details to coordinate directly with the requester."
+                            )
+
+                            request.contactFullName?.let {
+                                DetailLine(label = "Full name", value = it)
+                            }
+
+                            request.contactPhone?.let {
+                                DetailLine(label = "Phone", value = it)
+                            }
+
+                            request.contactAlternativePhone?.let {
+                                DetailLine(label = "Alternative phone", value = it)
+                            }
+
+                            request.requesterEmail?.let {
+                                DetailLine(label = "Email", value = it)
+                            }
+                        }
+                    }
+
+                    SectionCard {
                         Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                             SectionHeader(
                                 title = "Actions",
-                                subtitle = "Update the assignment when your work is complete or if you need to release it."
+                                subtitle = "Release this assignment if you cannot continue."
                             )
 
                             if (error.isNotBlank()) {
@@ -233,57 +300,41 @@ fun AssignedRequestScreen(
                                 HelperText(text = infoMessage)
                             }
 
-                            PrimaryButton(
-                                text = if (resolving) "Resolving..." else "Mark As Resolved",
-                                onClick = {
-                                    resolving = true
-                                },
-                                loading = resolving,
-                                enabled = !cancelling
-                            )
-
                             SecondaryButton(
                                 text = "Release Assignment",
                                 onClick = {
                                     cancelling = true
                                 },
-                                enabled = !resolving && !cancelling
+                                enabled = !cancelling
                             )
                         }
                     }
                 }
 
-                if (resolving) {
-                    LaunchedEffect(request.assignmentId, resolving) {
-                        runAssignmentAction(
-                            action = {
-                                AssignedRequestRepository.resolveAssignment(
-                                    token = token,
-                                    requestId = request.requestId
-                                )
-                            },
-                            successMessage = "Assignment updated successfully."
-                        )
-                        resolving = false
-                    }
-                }
-
                 if (cancelling) {
                     LaunchedEffect(request.assignmentId, cancelling) {
-                        runAssignmentAction(
-                            action = {
-                                AssignedRequestRepository.cancelAssignment(
-                                    token = token,
-                                    assignmentId = request.assignmentId
-                                )
-                            },
-                            successMessage = "Assignment released successfully."
-                        )
+                        runCancelAction(request.assignmentId)
                         cancelling = false
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(LocalNephSpacing.current.xs)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

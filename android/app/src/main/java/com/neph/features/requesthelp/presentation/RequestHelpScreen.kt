@@ -357,18 +357,15 @@ fun RequestHelpScreen(
             return
         }
 
-        if (!isLoggedIn) {
-            errorMessage = "Please log in to send this help request. The current backend endpoint requires authentication."
-            return
-        }
-
         loading = true
         scope.launch {
             try {
-                val hasActiveRequest = RequestHelpRepository.hasActiveHelpRequest(sessionToken)
-                if (hasActiveRequest) {
-                    errorMessage = "You can only have one active help request at a time."
-                    return@launch
+                if (isLoggedIn) {
+                    val hasActiveRequest = RequestHelpRepository.hasActiveHelpRequest(sessionToken)
+                    if (hasActiveRequest) {
+                        errorMessage = "You can only have one active help request at a time."
+                        return@launch
+                    }
                 }
 
                 RequestHelpRepository.createHelpRequest(
@@ -415,7 +412,7 @@ fun RequestHelpScreen(
                         subtitle = if (isLoggedIn) {
                             "Select the support you need. Shared fields are prefilled from your profile when available."
                         } else {
-                            "Fill the same request form manually as a guest. Sending currently requires login because the backend endpoint is authenticated."
+                            "Guest users can fill and send this request form manually."
                         }
                     )
 

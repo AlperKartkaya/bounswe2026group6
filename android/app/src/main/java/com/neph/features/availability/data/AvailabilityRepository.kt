@@ -2,9 +2,7 @@ package com.neph.features.availability.data
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.neph.core.network.ApiException
 import com.neph.core.network.JsonHttpClient
-import com.neph.features.assignedrequest.data.AssignedRequestRepository
 import org.json.JSONObject
 
 data class AvailabilityState(
@@ -52,29 +50,16 @@ object AvailabilityRepository {
     suspend fun refreshAssignmentState(token: String): AvailabilityState {
         ensureInitialized()
 
-        val nextState = try {
-            val assignment = AssignedRequestRepository.fetchCurrentAssignment(token)
-            if (assignment != null) {
-                cachedState.copy(
-                    isAvailable = true,
-                    assignmentId = assignment.assignmentId
-                )
-            } else {
-                AvailabilityState(
-                    isAvailable = false,
-                    assignmentId = null
-                )
-            }
-        } catch (error: ApiException) {
-            if (error.status == 404) {
-                AvailabilityState(
-                    isAvailable = false,
-                    assignmentId = null
-                )
-            } else {
-                throw error
-            }
-        }
+        val response = JsonHttpClient.request(
+            path = "/availability/status",
+            token = token
+        )
+
+        val assignment = response.optJSONObject("assignment")
+        val nextState = AvailabilityState(
+            isAvailable = response.optBoolean("isAvailable", false),
+            assignmentId = assignment?.optString("assignment_id")?.takeIf { it.isNotBlank() }
+        )
 
         saveAvailabilityState(nextState)
         return nextState

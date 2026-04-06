@@ -278,6 +278,37 @@ private fun MyHelpRequestCard(
                 color = MaterialTheme.colorScheme.primary
             )
 
+            if (request.helperFullName != null || request.helperPhone != null || request.helperExpertise != null) {
+                SectionHeader(
+                    title = "Assigned Helper",
+                    subtitle = "Your assigned helper's contact details."
+                )
+
+                request.helperFullName?.let {
+                    Text(
+                        text = "Name: $it",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                request.helperPhone?.let {
+                    Text(
+                        text = "Phone: $it",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                request.helperExpertise?.let {
+                    Text(
+                        text = "Expertise: $it",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             if (request.helpTypes.size > 1) {
                 Text(
                     text = "Help Types: ${request.helpTypes.joinToString(", ")}",

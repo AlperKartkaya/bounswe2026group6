@@ -51,7 +51,7 @@ object RequestHelpRepository {
     }
 
     suspend fun createHelpRequest(
-        token: String,
+        token: String?,
         submission: RequestHelpSubmission
     ): String {
         val response = JsonHttpClient.request(

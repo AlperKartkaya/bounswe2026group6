@@ -17,6 +17,11 @@ data class MyHelpRequestUiModel(
     val contactName: String?,
     val contactPhone: String?,
     val alternativePhone: String?,
+    val helperFirstName: String?,
+    val helperLastName: String?,
+    val helperPhone: String?,
+    val helperExpertise: String?,
+    val helperFullName: String?,
     val createdAt: String?
 )
 
@@ -28,12 +33,14 @@ object MyHelpRequestsRepository {
         )
 
         val requests = response.optJSONArray("requests") ?: return emptyList()
-        return buildList {
+        val mappedRequests = buildList {
             for (index in 0 until requests.length()) {
                 val request = requests.optJSONObject(index) ?: continue
                 add(mapRequest(request))
             }
         }
+
+        return mappedRequests.distinctBy { it.id }
     }
 
     suspend fun markRequestAsResolved(token: String, requestId: String): MyHelpRequestUiModel? {
@@ -52,6 +59,11 @@ object MyHelpRequestsRepository {
         val helpTypes = request.optJSONArray("helpTypes").toStringList().map(::formatHelpType)
         val status = request.optString("status").ifBlank { "Unknown" }
         val contact = request.optJSONObject("contact")
+        val helper = request.optJSONObject("helper")
+        val helperFirstName = helper?.optString("firstName")?.trim()?.takeIf { it.isNotBlank() }
+        val helperLastName = helper?.optString("lastName")?.trim()?.takeIf { it.isNotBlank() }
+        val helperPhone = helper?.opt("phone")?.toString()?.takeIf { it.isNotBlank() }
+        val helperExpertise = helper?.optString("expertise")?.trim()?.takeIf { it.isNotBlank() }
 
         return MyHelpRequestUiModel(
             id = request.optString("id"),
@@ -66,6 +78,14 @@ object MyHelpRequestsRepository {
             contactName = contact?.optString("fullName")?.trim()?.takeIf { it.isNotBlank() },
             contactPhone = contact?.opt("phone")?.toString()?.takeIf { it.isNotBlank() },
             alternativePhone = contact?.opt("alternativePhone")?.toString()?.takeIf { it.isNotBlank() },
+            helperFirstName = helperFirstName,
+            helperLastName = helperLastName,
+            helperPhone = helperPhone,
+            helperExpertise = helperExpertise,
+            helperFullName = listOfNotNull(helperFirstName, helperLastName)
+                .joinToString(" ")
+                .trim()
+                .takeIf { it.isNotBlank() },
             createdAt = request.optString("createdAt").takeIf { it.isNotBlank() }?.let(::formatTimestamp)
         )
     }
