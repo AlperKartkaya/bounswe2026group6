@@ -12,7 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Help
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -205,6 +205,39 @@ fun MyHelpRequestsScreen(
                                             }
                                         }
                                     }
+                                } else if (!isAuthenticated && activeRequest.guestAccessToken != null) {
+                                    {
+                                        actionMessage = ""
+                                        actionInProgressRequestId = activeRequest.id
+                                        scope.launch {
+                                            try {
+                                                val updatedRequest = MyHelpRequestsRepository.markGuestRequestAsResolved(
+                                                    requestId = activeRequest.id,
+                                                    guestAccessToken = activeRequest.guestAccessToken
+                                                )
+                                                requests = buildList {
+                                                    for (request in requests) {
+                                                        if (request.id == activeRequest.id && updatedRequest != null) {
+                                                            add(updatedRequest)
+                                                        } else {
+                                                            add(request)
+                                                        }
+                                                    }
+                                                }
+                                                actionMessage = "Your help request was marked as resolved."
+                                            } catch (cancellationException: CancellationException) {
+                                                throw cancellationException
+                                            } catch (errorResponse: ApiException) {
+                                                actionMessage = errorResponse.message.ifBlank {
+                                                    "Could not update your help request."
+                                                }
+                                            } catch (_: Exception) {
+                                                actionMessage = "Something went wrong while updating your help request."
+                                            } finally {
+                                                actionInProgressRequestId = null
+                                            }
+                                        }
+                                    }
                                 } else {
                                     null
                                 },
@@ -283,7 +316,7 @@ private fun EmptyStateView(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Help,
+                    imageVector = Icons.AutoMirrored.Filled.Help,
                     contentDescription = "No help requests yet",
                     tint = MaterialTheme.colorScheme.primary
                 )

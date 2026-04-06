@@ -7,6 +7,7 @@ import org.json.JSONObject
 
 data class MyHelpRequestUiModel(
     val id: String,
+    val guestAccessToken: String? = null,
     val helpTypes: List<String>,
     val helpTypeSummary: String,
     val description: String,
@@ -49,7 +50,12 @@ object MyHelpRequestsRepository {
         return buildList {
             for (trackedRequest in trackedRequests) {
                 val request = RequestHelpRepository.fetchGuestHelpRequest(trackedRequest) ?: continue
-                add(mapRequest(request))
+                add(
+                    mapRequest(
+                        request = request,
+                        guestAccessToken = trackedRequest.guestAccessToken
+                    )
+                )
             }
         }.distinctBy { it.id }
     }
@@ -65,7 +71,28 @@ object MyHelpRequestsRepository {
         return response.optJSONObject("request")?.let(::mapRequest)
     }
 
-    private fun mapRequest(request: JSONObject): MyHelpRequestUiModel {
+    suspend fun markGuestRequestAsResolved(
+        requestId: String,
+        guestAccessToken: String
+    ): MyHelpRequestUiModel? {
+        val response = JsonHttpClient.request(
+            path = "/help-requests/$requestId/status?guestAccessToken=$guestAccessToken",
+            method = "PATCH",
+            body = JSONObject().put("status", "RESOLVED")
+        )
+
+        return response.optJSONObject("request")?.let {
+            mapRequest(
+                request = it,
+                guestAccessToken = guestAccessToken
+            )
+        }
+    }
+
+    private fun mapRequest(
+        request: JSONObject,
+        guestAccessToken: String? = null
+    ): MyHelpRequestUiModel {
         val description = request.optString("description").trim()
         val helpTypes = request.optJSONArray("helpTypes").toStringList().map(::formatHelpType)
         val status = request.optString("status").ifBlank { "Unknown" }
@@ -78,6 +105,7 @@ object MyHelpRequestsRepository {
 
         return MyHelpRequestUiModel(
             id = request.optString("id"),
+            guestAccessToken = guestAccessToken,
             helpTypes = helpTypes,
             helpTypeSummary = buildHelpTypeSummary(helpTypes),
             description = description,
