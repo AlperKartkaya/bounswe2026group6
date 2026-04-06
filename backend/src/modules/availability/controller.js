@@ -24,7 +24,7 @@ async function handleSetAvailability(req, res) {
     return res.status(200).json(result);
   } catch (error) {
     console.error('Error in setAvailability:', error);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: error.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal server error occurred' });
   }
 }
 
@@ -39,7 +39,7 @@ async function handleSyncAvailability(req, res) {
     return res.status(200).json(result);
   } catch (error) {
     console.error('Error in syncAvailability:', error);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: error.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal server error occurred' });
   }
 }
 
@@ -52,7 +52,7 @@ async function handleGetMyAssignment(req, res) {
       return res.status(404).json({ code: 'NOT_FOUND', message: error.message });
     }
     console.error('Error in getMyAssignment:', error);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: error.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal server error occurred' });
   }
 }
 
@@ -70,7 +70,7 @@ async function handleCancelAssignment(req, res) {
       return res.status(404).json({ code: 'NOT_FOUND', message: error.message });
     }
     console.error('Error in cancelAssignment:', error);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: error.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal server error occurred' });
   }
 }
 
@@ -88,7 +88,7 @@ async function handleResolveAssignment(req, res) {
       return res.status(404).json({ code: 'NOT_FOUND', message: error.message });
     }
     console.error('Error in resolveAssignment:', error);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: error.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal server error occurred' });
   }
 }
 
@@ -98,7 +98,7 @@ async function handleGetAvailabilityStatus(req, res) {
     return res.status(200).json(result);
   } catch (error) {
     console.error('Error in getAvailabilityStatus:', error);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: error.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal server error occurred' });
   }
 }
 
