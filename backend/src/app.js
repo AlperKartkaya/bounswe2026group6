@@ -12,6 +12,7 @@ function createApp() {
   });
 
   app.use('/api', apiRouter);
+  app.use('/', apiRouter);
 
   app.use((request, response) => {
     response.status(404).json({
