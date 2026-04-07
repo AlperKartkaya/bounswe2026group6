@@ -13,6 +13,7 @@ import { bloodTypeOptions } from "@/lib/bloodTypes";
 import { countryCodeOptions } from "@/lib/countryCodes";
 import { getAccessToken, SIGNUP_DRAFT_KEY } from "@/lib/auth";
 import {
+    buildAddress,
     calculateAgeFromBirthDate,
     parseListField,
     patchMyHealth,
@@ -25,7 +26,6 @@ import {
     splitFullName,
     validateExpertiseAreas,
 } from "@/lib/profile";
-import { useTurkishLocations } from "@/lib/useTurkishLocations";
 
 type ProfileForm = {
     fullName: string;
@@ -39,14 +39,70 @@ type ProfileForm = {
     medicalHistory: string;
     profession: string;
     expertise: string;
-    provinceCode: string;
-    province: string;
-    districtId: string;
+    country: string;
+    city: string;
     district: string;
-    neighborhoodId: string;
     neighborhood: string;
     extraAddress: string;
     shareLocation: boolean;
+};
+
+type Neighborhood = {
+    label: string;
+    value: string;
+};
+
+type District = {
+    label: string;
+    neighborhoods: Neighborhood[];
+};
+
+type City = {
+    label: string;
+    districts: Record<string, District>;
+};
+
+type Country = {
+    label: string;
+    cities: Record<string, City>;
+};
+
+type LocationData = Record<string, Country>;
+
+const locationData: LocationData = {
+    tr: {
+        label: "Turkey",
+        cities: {
+            istanbul: {
+                label: "Istanbul",
+                districts: {
+                    kadikoy: {
+                        label: "Kadıköy",
+                        neighborhoods: [
+                            { label: "Bostancı", value: "bostanci" },
+                            { label: "Erenköy", value: "erenkoy" },
+                        ],
+                    },
+                    besiktas: {
+                        label: "Beşiktaş",
+                        neighborhoods: [
+                            { label: "Balmumcu", value: "balmumcu" },
+                            { label: "Kuruçeşme", value: "kurucesme" },
+                        ],
+                    },
+                },
+            },
+            ankara: {
+                label: "Ankara",
+                districts: {
+                    cankaya: {
+                        label: "Çankaya",
+                        neighborhoods: [{ label: "Anıttepe", value: "anittepe" }],
+                    },
+                },
+            },
+        },
+    },
 };
 
 const initialForm: ProfileForm = {
@@ -61,11 +117,9 @@ const initialForm: ProfileForm = {
     medicalHistory: "",
     profession: "",
     expertise: "",
-    provinceCode: "",
-    province: "",
-    districtId: "",
+    country: "",
+    city: "",
     district: "",
-    neighborhoodId: "",
     neighborhood: "",
     extraAddress: "",
     shareLocation: false,
@@ -76,23 +130,6 @@ export default function CompleteProfileForm() {
     const [form, setForm] = React.useState<ProfileForm>(initialForm);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState("");
-    const {
-        provinces,
-        districts,
-        neighborhoods,
-        loadingProvinces,
-        loadingDistricts,
-        loadingNeighborhoods,
-        provinceError,
-        districtError,
-        neighborhoodError,
-        retryProvinces,
-        retryDistricts,
-        retryNeighborhoods,
-    } = useTurkishLocations({
-        provinceCode: form.provinceCode,
-        districtId: form.districtId,
-    });
 
     React.useEffect(() => {
         const savedDraft = sessionStorage.getItem(SIGNUP_DRAFT_KEY);
@@ -115,18 +152,37 @@ export default function CompleteProfileForm() {
         }
     }, []);
 
-    const provinceOptions = provinces.map((province) => ({
-        label: province.name,
-        value: province.code,
+    const countryData = locationData[form.country] ?? undefined;
+
+    const countryOptions = Object.entries(locationData).map(([key, value]) => ({
+        label: value.label,
+        value: key,
     }));
-    const districtOptions = districts.map((district) => ({
-        label: district.name,
-        value: district.id,
-    }));
-    const neighborhoodOptions = neighborhoods.map((neighborhood) => ({
-        label: neighborhood.name,
-        value: neighborhood.id,
-    }));
+
+    const cityOptions =
+        form.country && countryData
+            ? Object.entries(countryData.cities).map(([key, value]) => ({
+                label: value.label,
+                value: key,
+            }))
+            : [];
+
+    const districtOptions =
+        form.city && countryData?.cities[form.city]
+            ? Object.entries(countryData.cities[form.city].districts).map(
+                ([key, value]) => ({
+                    label: value.label,
+                    value: key,
+                })
+            )
+            : [];
+
+    const neighborhoodOptions =
+        form.city &&
+            form.district &&
+            countryData?.cities[form.city]?.districts[form.district]
+            ? countryData.cities[form.city].districts[form.district].neighborhoods
+            : [];
 
     const handleSave = async () => {
         setError("");
@@ -173,13 +229,7 @@ export default function CompleteProfileForm() {
             return;
         }
 
-        if (
-            !form.height ||
-            !form.weight ||
-            !form.provinceCode ||
-            !form.districtId ||
-            !form.neighborhoodId
-        ) {
+        if (!form.height || !form.weight || !form.country || !form.city) {
             setError("Please fill in all required fields.");
             return;
         }
@@ -213,10 +263,14 @@ export default function CompleteProfileForm() {
             });
 
             await patchMyLocation(token, {
-                provinceCode: form.provinceCode,
-                districtId: form.districtId,
-                neighborhoodId: form.neighborhoodId,
-                extraAddress: form.extraAddress.trim() || null,
+                country: countryData?.label || form.country,
+                city: countryData?.cities[form.city]?.label || form.city,
+                address:
+                    buildAddress({
+                        district: form.district,
+                        neighborhood: form.neighborhood,
+                        extraAddress: form.extraAddress,
+                    }) || null,
             });
 
             await patchMyPrivacy(token, {
@@ -398,23 +452,28 @@ export default function CompleteProfileForm() {
             <ProfileInfoRow label="Address">
                 <SelectInput
                     id="country"
-                    label="Province"
-                    options={[{ label: "Select Province", value: "" }, ...provinceOptions]}
-                    value={form.provinceCode}
-                    disabled={loadingProvinces}
-                    helperText={
-                        loadingProvinces
-                            ? "Loading provinces..."
-                            : provinceError || undefined
-                    }
+                    options={[{ label: "Select Country", value: "" }, ...countryOptions]}
+                    value={form.country}
                     onChange={(e) =>
                         setForm({
                             ...form,
-                            provinceCode: e.target.value,
-                            province: "",
-                            districtId: "",
+                            country: e.target.value,
+                            city: "",
                             district: "",
-                            neighborhoodId: "",
+                            neighborhood: "",
+                        })
+                    }
+                />
+
+                <SelectInput
+                    id="city"
+                    options={[{ label: "Select City", value: "" }, ...cityOptions]}
+                    value={form.city}
+                    onChange={(e) =>
+                        setForm({
+                            ...form,
+                            city: e.target.value,
+                            district: "",
                             neighborhood: "",
                         })
                     }
@@ -422,26 +481,12 @@ export default function CompleteProfileForm() {
 
                 <SelectInput
                     id="district"
-                    label="District"
                     options={[{ label: "Select District", value: "" }, ...districtOptions]}
-                    value={form.districtId}
-                    disabled={!form.provinceCode || loadingDistricts}
-                    helperText={
-                        !form.provinceCode
-                            ? "Select a province first."
-                            : loadingDistricts
-                                ? "Loading districts..."
-                                : districtError ||
-                                  (districtOptions.length === 0
-                                      ? "No districts found for this province."
-                                      : undefined)
-                    }
+                    value={form.district}
                     onChange={(e) =>
                         setForm({
                             ...form,
-                            districtId: e.target.value,
-                            district: "",
-                            neighborhoodId: "",
+                            district: e.target.value,
                             neighborhood: "",
                         })
                     }
@@ -449,28 +494,15 @@ export default function CompleteProfileForm() {
 
                 <SelectInput
                     id="neighborhood"
-                    label="Neighborhood"
                     options={[
                         { label: "Select Neighborhood", value: "" },
                         ...neighborhoodOptions,
                     ]}
-                    value={form.neighborhoodId}
-                    disabled={!form.districtId || loadingNeighborhoods}
-                    helperText={
-                        !form.districtId
-                            ? "Select a district first."
-                            : loadingNeighborhoods
-                                ? "Loading neighborhoods..."
-                                : neighborhoodError ||
-                                  (neighborhoodOptions.length === 0
-                                      ? "No neighborhoods found for this district."
-                                      : undefined)
-                    }
+                    value={form.neighborhood}
                     onChange={(e) =>
                         setForm({
                             ...form,
-                            neighborhoodId: e.target.value,
-                            neighborhood: "",
+                            neighborhood: e.target.value,
                         })
                     }
                 />
@@ -486,33 +518,10 @@ export default function CompleteProfileForm() {
                         })
                     }
                 />
-                {provinceError ? (
-                    <button
-                        type="button"
-                        onClick={() => void retryProvinces()}
-                        className="text-left text-xs font-semibold text-[color:var(--primary-500)] hover:underline"
-                    >
-                        Retry loading provinces
-                    </button>
-                ) : null}
-                {districtError ? (
-                    <button
-                        type="button"
-                        onClick={() => void retryDistricts()}
-                        className="text-left text-xs font-semibold text-[color:var(--primary-500)] hover:underline"
-                    >
-                        Retry loading districts
-                    </button>
-                ) : null}
-                {neighborhoodError ? (
-                    <button
-                        type="button"
-                        onClick={() => void retryNeighborhoods()}
-                        className="text-left text-xs font-semibold text-[color:var(--primary-500)] hover:underline"
-                    >
-                        Retry loading neighborhoods
-                    </button>
-                ) : null}
+                <HelperText>
+                    District and neighborhood are flattened into the backend address field
+                    until dedicated backend fields exist.
+                </HelperText>
             </ProfileInfoRow>
 
             <div className="flex items-center justify-between">
