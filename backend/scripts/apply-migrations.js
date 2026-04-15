@@ -3,6 +3,8 @@ const path = require('path');
 
 const { pool } = require('../src/db/pool');
 
+const MIGRATION_LOCK_KEY = 2026041501;
+
 function listSqlFilesRecursive(baseDir) {
   if (!fs.existsSync(baseDir)) {
     return [];
@@ -27,8 +29,8 @@ function listSqlFilesRecursive(baseDir) {
   return files;
 }
 
-async function ensureSchemaMigrationsTable() {
-  await pool.query(`
+async function ensureSchemaMigrationsTable(client) {
+  await client.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       file_name TEXT PRIMARY KEY,
       applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -36,18 +38,30 @@ async function ensureSchemaMigrationsTable() {
   `);
 }
 
-async function isAlreadyApplied(fileKey) {
-  const result = await pool.query('SELECT 1 FROM schema_migrations WHERE file_name = $1', [fileKey]);
-  return result.rowCount > 0;
-}
+async function applySingleMigrationAtomically(client, migration) {
+  const sql = fs.readFileSync(migration.filePath, 'utf8');
 
-async function markApplied(fileKey) {
-  await pool.query('INSERT INTO schema_migrations (file_name) VALUES ($1)', [fileKey]);
-}
+  await client.query('BEGIN');
 
-async function applyMigration(filePath) {
-  const sql = fs.readFileSync(filePath, 'utf8');
-  await pool.query(sql);
+  try {
+    const existing = await client.query('SELECT 1 FROM schema_migrations WHERE file_name = $1', [
+      migration.fileKey,
+    ]);
+
+    if (existing.rowCount > 0) {
+      await client.query('COMMIT');
+      console.log(`Skipping already applied migration: ${migration.fileKey}`);
+      return;
+    }
+
+    console.log(`Applying migration: ${migration.fileKey}`);
+    await client.query(sql);
+    await client.query('INSERT INTO schema_migrations (file_name) VALUES ($1)', [migration.fileKey]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
 }
 
 async function run() {
@@ -58,39 +72,44 @@ async function run() {
     },
   ];
 
-  await ensureSchemaMigrationsTable();
+  const client = await pool.connect();
 
-  const allMigrations = [];
+  try {
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+    await ensureSchemaMigrationsTable(client);
 
-  for (const source of migrationSources) {
-    const files = listSqlFilesRecursive(source.dir)
-      .sort((a, b) => a.localeCompare(b))
-      .map((filePath) => {
-        const relativeFile = path.relative(source.dir, filePath).split(path.sep).join('/');
-        const fileKey = `${source.keyPrefix}/${relativeFile}`;
+    const allMigrations = [];
 
-        return {
-          filePath,
-          fileKey,
-        };
-      });
+    for (const source of migrationSources) {
+      const files = listSqlFilesRecursive(source.dir)
+        .sort((a, b) => a.localeCompare(b))
+        .map((filePath) => {
+          const relativeFile = path.relative(source.dir, filePath).split(path.sep).join('/');
+          const fileKey = `${source.keyPrefix}/${relativeFile}`;
 
-    allMigrations.push(...files);
-  }
+          return {
+            filePath,
+            fileKey,
+          };
+        });
 
-  for (const migration of allMigrations) {
-    // Idempotency is managed by schema_migrations table.
-    if (await isAlreadyApplied(migration.fileKey)) {
-      console.log(`Skipping already applied migration: ${migration.fileKey}`);
-      continue;
+      allMigrations.push(...files);
     }
 
-    console.log(`Applying migration: ${migration.fileKey}`);
-    await applyMigration(migration.filePath);
-    await markApplied(migration.fileKey);
-  }
+    for (const migration of allMigrations) {
+      await applySingleMigrationAtomically(client, migration);
+    }
 
-  console.log('Migration step completed.');
+    console.log('Migration step completed.');
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
+    } catch (_error) {
+      // Best effort unlock.
+    }
+
+    client.release();
+  }
 }
 
 run()

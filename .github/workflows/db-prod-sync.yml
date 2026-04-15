@@ -57,18 +57,17 @@ jobs:
           echo "migration_changed=$MIGRATION_CHANGED" >> "$GITHUB_OUTPUT"
 
       - name: Install PostgreSQL client
-        if: steps.changes.outputs.init_sql_changed == 'true' || steps.changes.outputs.migration_changed == 'true'
+        if: steps.changes.outputs.init_sql_changed == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Apply production DB updates
-        if: steps.changes.outputs.init_sql_changed == 'true' || steps.changes.outputs.migration_changed == 'true'
+      - name: Apply init.sql on production (guarded)
+        if: steps.changes.outputs.init_sql_changed == 'true'
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           ALLOW_PROD_SCHEMA_RESET: ${{ secrets.ALLOW_PROD_SCHEMA_RESET }}
           INIT_SQL_CHANGED: ${{ steps.changes.outputs.init_sql_changed }}
-          MIGRATION_CHANGED: ${{ steps.changes.outputs.migration_changed }}
         shell: bash
         run: |
           set -euo pipefail
@@ -88,33 +87,23 @@ jobs:
             psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/docker/postgres/init.sql
           fi
 
-          if [ "${MIGRATION_CHANGED}" = "true" ]; then
-            echo "Applying SQL migrations with schema_migrations tracking..."
+      - name: Setup Node
+        if: steps.changes.outputs.migration_changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
 
-            psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS schema_migrations (file_name TEXT PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);"
+      - name: Install backend dependencies
+        if: steps.changes.outputs.migration_changed == 'true'
+        working-directory: backend
+        run: npm ci --omit=dev --no-audit --no-fund
 
-            apply_migration_dir() {
-              local migration_dir="$1"
-
-              if [ ! -d "$migration_dir" ]; then
-                return 0
-              fi
-
-              find "$migration_dir" -type f -name '*.sql' | sort | while IFS= read -r file; do
-                if [ -z "$file" ]; then
-                  continue
-                fi
-
-                if psql "$PROD_DATABASE_URL" -Atqc "SELECT 1 FROM schema_migrations WHERE file_name = '$file'" | grep -q '^1$'; then
-                  echo "Skipping already applied migration: $file"
-                  continue
-                fi
-
-                echo "Applying migration: $file"
-                psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"
-                psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations (file_name) VALUES ('$file')"
-              done
-            }
-
-            apply_migration_dir "backend/migrations"
-          fi
+      - name: Apply production migrations with shared runner
+        if: steps.changes.outputs.migration_changed == 'true'
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DB_SSL: 'true'
+        run: npm run migrate
