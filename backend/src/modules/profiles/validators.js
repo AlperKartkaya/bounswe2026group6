@@ -188,6 +188,26 @@ function validateLocationPatch(body) {
     ) {
       return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate.capturedAt must be a string or null' };
     }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data, 'latitude')
+      && Object.prototype.hasOwnProperty.call(data.coordinate, 'latitude')
+      && data.latitude !== null
+      && data.coordinate.latitude !== null
+      && data.latitude !== data.coordinate.latitude
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'latitude conflicts with coordinate.latitude' };
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data, 'longitude')
+      && Object.prototype.hasOwnProperty.call(data.coordinate, 'longitude')
+      && data.longitude !== null
+      && data.coordinate.longitude !== null
+      && data.longitude !== data.coordinate.longitude
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'longitude conflicts with coordinate.longitude' };
+    }
   }
 
   const latitudeProvided = Object.prototype.hasOwnProperty.call(data, 'latitude');

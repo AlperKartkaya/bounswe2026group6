@@ -30,6 +30,10 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function hasOwn(object, key) {
+  return isPlainObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+}
+
 function buildAddressFromAdministrative(administrative) {
   if (!isPlainObject(administrative)) {
     return null;
@@ -271,11 +275,18 @@ async function upsertHealthInfo(profileId, data, providedFields = []) {
 
 async function upsertLocationProfile(profileId, data, providedFields = []) {
   const provided = new Set(providedFields);
-  const hasAddress = provided.has('address') || provided.has('displayAddress') || provided.has('administrative');
-  const hasCity = provided.has('city') || provided.has('administrative');
-  const hasCountry = provided.has('country') || provided.has('administrative');
-  const hasLatitude = provided.has('latitude') || provided.has('coordinate');
-  const hasLongitude = provided.has('longitude') || provided.has('coordinate');
+  const administrative = isPlainObject(data.administrative) ? data.administrative : null;
+  const coordinate = isPlainObject(data.coordinate) ? data.coordinate : null;
+  const hasAddress =
+    provided.has('address')
+    || provided.has('displayAddress')
+    || hasOwn(administrative, 'neighborhood')
+    || hasOwn(administrative, 'district')
+    || hasOwn(administrative, 'extraAddress');
+  const hasCity = provided.has('city') || hasOwn(administrative, 'city');
+  const hasCountry = provided.has('country') || hasOwn(administrative, 'country');
+  const hasLatitude = provided.has('latitude') || hasOwn(coordinate, 'latitude');
+  const hasLongitude = provided.has('longitude') || hasOwn(coordinate, 'longitude');
   const normalizedLocation = normalizeLocationInput(data);
 
   const sql = `

@@ -262,6 +262,28 @@ function validateCreateHelpRequest(payload) {
       errors.push('`location.latitude` and `location.longitude` must be provided together.');
     }
 
+    if (
+      coordinate
+      && Object.prototype.hasOwnProperty.call(payload.location, 'latitude')
+      && Object.prototype.hasOwnProperty.call(payload.location.coordinate, 'latitude')
+      && payload.location.latitude !== null
+      && payload.location.coordinate.latitude !== null
+      && payload.location.latitude !== payload.location.coordinate.latitude
+    ) {
+      errors.push('`location.latitude` conflicts with `location.coordinate.latitude`.');
+    }
+
+    if (
+      coordinate
+      && Object.prototype.hasOwnProperty.call(payload.location, 'longitude')
+      && Object.prototype.hasOwnProperty.call(payload.location.coordinate, 'longitude')
+      && payload.location.longitude !== null
+      && payload.location.coordinate.longitude !== null
+      && payload.location.longitude !== payload.location.coordinate.longitude
+    ) {
+      errors.push('`location.longitude` conflicts with `location.coordinate.longitude`.');
+    }
+
     location = {
       country: validateRequiredString('location.country', payload.location.country, errors, {
         maxLength: 100,
