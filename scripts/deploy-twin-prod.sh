@@ -39,7 +39,18 @@ pm2 save
 
 pm2 status
 curl -fsS http://127.0.0.1:3000/health
-curl -fsSI http://127.0.0.1:3001
+
+for i in $(seq 1 30); do
+  if curl -fsSI http://127.0.0.1:3001 >/dev/null; then
+    break
+  fi
+  sleep 2
+done
+
+if ! curl -fsSI http://127.0.0.1:3001 >/dev/null; then
+  pm2 logs neph-web --lines 120 --nostream || true
+  exit 1
+fi
+
 curl -fsSI https://twin-neph.app
 curl -fsS https://twin-neph.app/health
-
