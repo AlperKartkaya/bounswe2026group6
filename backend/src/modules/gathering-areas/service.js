@@ -2,6 +2,7 @@ const DEFAULT_OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const DEFAULT_TIMEOUT_MS = 6000;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_CACHE_MAX_ENTRIES = 500;
+const CACHE_COORDINATE_DECIMALS = 4;
 
 const nearbyCache = new Map();
 
@@ -31,7 +32,7 @@ function getCacheMaxEntries() {
 }
 
 function buildCacheKey({ lat, lon, radius, limit }) {
-  return `${lat.toFixed(6)}:${lon.toFixed(6)}:${radius}:${limit}`;
+  return `${lat.toFixed(CACHE_COORDINATE_DECIMALS)}:${lon.toFixed(CACHE_COORDINATE_DECIMALS)}:${radius}:${limit}`;
 }
 
 function readFromCache(cacheKey) {

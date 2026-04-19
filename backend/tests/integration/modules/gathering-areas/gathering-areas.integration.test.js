@@ -133,6 +133,38 @@ describe('gathering-areas integration', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  test('GET /api/gathering-areas/nearby reuses cache for small GPS jitter', async () => {
+    const app = createApp();
+
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        elements: [
+          {
+            type: 'node',
+            id: 2100,
+            lat: 41.0001,
+            lon: 29.0001,
+            tags: {
+              emergency: 'assembly_point',
+            },
+          },
+        ],
+      }),
+    });
+
+    const first = await request(app)
+      .get('/api/gathering-areas/nearby?lat=41.00004&lon=29.00004&radius=1000&limit=5');
+
+    const second = await request(app)
+      .get('/api/gathering-areas/nearby?lat=41.000049&lon=29.000049&radius=1000&limit=5');
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.collection.features).toHaveLength(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   test('GET /api/gathering-areas/nearby applies defaults when radius and limit are omitted', async () => {
     const app = createApp();
 
