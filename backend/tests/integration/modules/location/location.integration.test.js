@@ -43,6 +43,58 @@ describe('location integration', () => {
     expect(response.body.countryCode).toBe('TR');
     expect(response.body.tree).toBeTruthy();
     expect(response.body.tree.cities).toBeTruthy();
+    expect(response.body.meta).toBeTruthy();
+  });
+
+  test('GET /api/location/tree returns broad TR dataset for dropdown', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .get('/api/location/tree?countryCode=TR');
+
+    expect(response.status).toBe(200);
+
+    const { cities } = response.body.tree;
+    const cityKeys = Object.keys(cities || {});
+
+    // Guard against accidental fallback to tiny static data.
+    expect(cityKeys.length).toBeGreaterThanOrEqual(81);
+    expect(cities.ankara).toBeTruthy();
+    expect(cities.istanbul).toBeTruthy();
+    expect(cities.ankara.districts).toBeTruthy();
+    expect(Object.keys(cities.ankara.districts)).toContain('cankaya');
+  });
+
+  test('GET /api/location/tree meta counts match actual tree content', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .get('/api/location/tree?countryCode=TR');
+
+    expect(response.status).toBe(200);
+
+    const { tree, meta } = response.body;
+    expect(meta).toBeTruthy();
+
+    const cityEntries = Object.values(tree.cities || {});
+    let districtCount = 0;
+    let neighborhoodCount = 0;
+
+    for (const city of cityEntries) {
+      const districtEntries = Object.values(city.districts || {});
+      districtCount += districtEntries.length;
+
+      for (const district of districtEntries) {
+        neighborhoodCount += Array.isArray(district.neighborhoods)
+          ? district.neighborhoods.length
+          : 0;
+      }
+    }
+
+    expect(meta.cityCount).toBe(cityEntries.length);
+    expect(meta.districtCount).toBe(districtCount);
+    expect(meta.neighborhoodCount).toBe(neighborhoodCount);
+    expect(meta.neighborhoodCount).toBeGreaterThan(0);
   });
 
   test('GET /api/location/tree returns 404 for unknown countryCode', async () => {
