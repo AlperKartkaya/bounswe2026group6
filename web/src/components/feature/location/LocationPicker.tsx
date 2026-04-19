@@ -44,11 +44,15 @@ export function LocationPicker({
     onChange,
     label = "Select location from map",
 }: LocationPickerProps) {
+    const searchInputId = React.useId();
     const [query, setQuery] = React.useState("");
     const [searching, setSearching] = React.useState(false);
     const [resolving, setResolving] = React.useState(false);
     const [results, setResults] = React.useState<LocationSearchItem[]>([]);
     const [error, setError] = React.useState("");
+    const skipNextSearchRef = React.useRef(false);
+    const searchRequestIdRef = React.useRef(0);
+    const reverseRequestIdRef = React.useRef(0);
 
     const center = value
         ? { latitude: value.latitude, longitude: value.longitude }
@@ -60,6 +64,13 @@ export function LocationPicker({
             return;
         }
 
+        if (skipNextSearchRef.current) {
+            skipNextSearchRef.current = false;
+            return;
+        }
+
+        const currentSearchRequestId = ++searchRequestIdRef.current;
+
         try {
             setSearching(true);
             setError("");
@@ -70,23 +81,44 @@ export function LocationPicker({
                 limit: 10,
             });
 
+            if (currentSearchRequestId !== searchRequestIdRef.current) {
+                return;
+            }
+
             setResults(response.items);
         } catch (err) {
+            if (currentSearchRequestId !== searchRequestIdRef.current) {
+                return;
+            }
+
             setError(err instanceof Error ? err.message : "Could not search locations.");
         } finally {
-            setSearching(false);
+            if (currentSearchRequestId === searchRequestIdRef.current) {
+                setSearching(false);
+            }
         }
     }, [countryCode, query]);
 
     const handleResolveCoordinates = React.useCallback(
         async (latitude: number, longitude: number) => {
+            const currentReverseRequestId = ++reverseRequestIdRef.current;
+
             try {
                 setResolving(true);
                 setError("");
 
                 const response = await reverseLocation({ latitude, longitude });
+
+                if (currentReverseRequestId !== reverseRequestIdRef.current) {
+                    return;
+                }
+
                 onChange(toPickerValue(response.item));
             } catch (err) {
+                if (currentReverseRequestId !== reverseRequestIdRef.current) {
+                    return;
+                }
+
                 setError(err instanceof Error ? err.message : "Could not resolve selected location.");
                 onChange({
                     placeId: "",
@@ -96,7 +128,9 @@ export function LocationPicker({
                     administrative: {},
                 });
             } finally {
-                setResolving(false);
+                if (currentReverseRequestId === reverseRequestIdRef.current) {
+                    setResolving(false);
+                }
             }
         },
         [onChange]
@@ -143,7 +177,7 @@ export function LocationPicker({
 
             <div className="flex flex-col gap-2 sm:flex-row">
                 <TextInput
-                    id="location-search"
+                    id={searchInputId}
                     placeholder="Search location"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
@@ -168,6 +202,7 @@ export function LocationPicker({
                             className="w-full border-b border-[#f0f0f2] px-3 py-2 text-left text-sm text-[#2b2b33] transition-colors hover:bg-[#fafafa]"
                             onClick={() => {
                                 onChange(toPickerValue(item));
+                                skipNextSearchRef.current = true;
                                 setResults([]);
                                 setQuery(item.displayName);
                             }}

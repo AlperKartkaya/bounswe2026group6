@@ -2,6 +2,9 @@
 
 import * as React from "react";
 import L from "leaflet";
+import markerIcon2xAsset from "leaflet/dist/images/marker-icon-2x.png";
+import markerIconAsset from "leaflet/dist/images/marker-icon.png";
+import markerShadowAsset from "leaflet/dist/images/marker-shadow.png";
 import {
     MapContainer,
     Marker,
@@ -24,10 +27,14 @@ type LeafletLocationMapProps = {
     onSelectPosition: (position: LatLng) => void;
 };
 
-const markerIcon = L.icon({
-    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+function toAssetUrl(asset: string | { src: string }) {
+    return typeof asset === "string" ? asset : asset.src;
+}
+
+const locationMarkerIcon = L.icon({
+    iconUrl: toAssetUrl(markerIconAsset),
+    iconRetinaUrl: toAssetUrl(markerIcon2xAsset),
+    shadowUrl: toAssetUrl(markerShadowAsset),
     iconSize: [25, 41],
     iconAnchor: [12, 41],
     popupAnchor: [1, -34],
@@ -88,7 +95,7 @@ export function LeafletLocationMap({
 
                 {selectedPosition ? (
                     <Marker
-                        icon={markerIcon}
+                        icon={locationMarkerIcon}
                         position={[selectedPosition.latitude, selectedPosition.longitude]}
                         draggable
                         eventHandlers={{
