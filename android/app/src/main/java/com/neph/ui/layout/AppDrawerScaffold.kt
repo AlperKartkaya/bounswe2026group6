@@ -44,13 +44,17 @@ import com.neph.navigation.Routes
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.launch
 
+internal fun sanitizeDrawerItems(drawerItems: List<Routes?>): List<Routes> {
+    return drawerItems.filterNotNull()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppDrawerScaffold(
     title: String,
     currentRoute: String,
     onNavigateToRoute: (String) -> Unit,
-    drawerItems: List<Routes> = Routes.drawerItems,
+    drawerItems: List<Routes?> = Routes.drawerItems,
     modifier: Modifier = Modifier,
     onOpenSettings: (() -> Unit)? = null,
     onProfileClick: (() -> Unit)? = null,
@@ -65,6 +69,7 @@ fun AppDrawerScaffold(
     val spacing = LocalNephSpacing.current
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val safeDrawerItems = sanitizeDrawerItems(drawerItems)
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -82,7 +87,7 @@ fun AppDrawerScaffold(
 
                     Spacer(modifier = Modifier.height(spacing.lg))
 
-                    drawerItems.forEach { item ->
+                    safeDrawerItems.forEach { item ->
                         NavigationDrawerItem(
                             label = {
                                 Text(text = item.drawerLabel.orEmpty())
