@@ -82,6 +82,15 @@ object AuthSessionStore {
         prefs.edit().remove(PendingVerificationEmailKey).apply()
     }
 
+    fun resetForTesting() {
+        if (::prefs.isInitialized) {
+            prefs.edit().clear().commit()
+        }
+
+        sessionToken = null
+        accessTokenState.value = null
+    }
+
     private fun ensureInitialized() {
         check(::prefs.isInitialized) {
             "AuthSessionStore must be initialized before use."

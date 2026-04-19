@@ -38,6 +38,13 @@ object ProfileRepository {
         return cachedProfile
     }
 
+    fun resetForTesting() {
+        cachedProfile = ProfileData()
+        if (::prefs.isInitialized) {
+            prefs.edit().clear().commit()
+        }
+    }
+
     suspend fun fetchAndCacheRemoteProfile(): ProfileData {
         ensureInitialized()
         val token = AuthSessionStore.getAccessToken().orEmpty()

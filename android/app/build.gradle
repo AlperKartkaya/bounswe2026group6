@@ -67,6 +67,7 @@ if (isReleaseTask) {
 android {
     namespace 'com.neph'
     compileSdk 36
+    testBuildType "e2e"
 
     defaultConfig {
         applicationId 'com.neph'
@@ -107,6 +108,12 @@ android {
     buildTypes {
         debug {
             buildConfigField 'String', 'API_BASE_URL', '"http://10.0.2.2:3000/api"'
+        }
+
+        e2e {
+            initWith debug
+            matchingFallbacks = ['debug']
+            buildConfigField 'String', 'API_BASE_URL', '"http://127.0.0.1:13006/api"'
         }
 
         release {
@@ -157,6 +164,12 @@ dependencies {
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test:monitor:1.8.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
+    androidTestImplementation 'com.squareup.okhttp3:mockwebserver3:5.3.0'
 
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'

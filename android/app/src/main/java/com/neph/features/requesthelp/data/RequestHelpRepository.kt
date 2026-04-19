@@ -159,6 +159,12 @@ object RequestHelpRepository {
         return prefs.getBoolean(GuestHasLocalRequestsKey, false) || getGuestTrackedRequests().isNotEmpty()
     }
 
+    fun resetForTesting() {
+        if (::prefs.isInitialized) {
+            prefs.edit().clear().commit()
+        }
+    }
+
     suspend fun fetchGuestHelpRequest(
         trackedRequest: GuestTrackedHelpRequest
     ): JSONObject? {
