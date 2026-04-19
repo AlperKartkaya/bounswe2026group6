@@ -1,5 +1,6 @@
 const {
   getLocationTree,
+  getLocationTreeMeta,
   searchLocations,
   reverseGeocode,
 } = require('./service');
@@ -14,6 +15,10 @@ function sendError(response, status, code, message) {
 }
 
 function mapServiceError(response, error) {
+  if (error.code === 'LOCATION_TREE_UNAVAILABLE') {
+    return sendError(response, 503, 'LOCATION_TREE_UNAVAILABLE', 'Location tree data is unavailable');
+  }
+
   if (error.code === 'GEOCODER_TIMEOUT') {
     return sendError(response, 504, 'GEOCODER_TIMEOUT', 'Location provider timed out');
   }
@@ -38,6 +43,7 @@ async function handleGetLocationTree(request, response) {
 
   try {
     const tree = await getLocationTree(validation.value.countryCode);
+    const meta = await getLocationTreeMeta(validation.value.countryCode);
 
     if (!tree) {
       return sendError(response, 404, 'NOT_FOUND', 'No location tree found for countryCode');
@@ -46,6 +52,7 @@ async function handleGetLocationTree(request, response) {
     return response.status(200).json({
       countryCode: validation.value.countryCode,
       tree,
+      meta,
     });
   } catch (error) {
     return mapServiceError(response, error);
