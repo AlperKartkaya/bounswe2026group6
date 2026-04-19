@@ -44,6 +44,11 @@ export function LeafletLocationMap({
     const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
     const mapRef = React.useRef<L.Map | null>(null);
     const markerRef = React.useRef<L.Marker | null>(null);
+    const onSelectPositionRef = React.useRef(onSelectPosition);
+
+    React.useEffect(() => {
+        onSelectPositionRef.current = onSelectPosition;
+    }, [onSelectPosition]);
 
     React.useEffect(() => {
         if (!mapContainerRef.current || mapRef.current) {
@@ -62,7 +67,7 @@ export function LeafletLocationMap({
         }).addTo(map);
 
         map.on("click", (event: L.LeafletMouseEvent) => {
-            onSelectPosition({
+            onSelectPositionRef.current({
                 latitude: event.latlng.lat,
                 longitude: event.latlng.lng,
             });
@@ -76,7 +81,18 @@ export function LeafletLocationMap({
             map.remove();
             mapRef.current = null;
         };
-    }, [center.latitude, center.longitude, onSelectPosition, zoom]);
+    }, []);
+
+    React.useEffect(() => {
+        const map = mapRef.current;
+        if (!map) {
+            return;
+        }
+
+        if (map.getZoom() !== zoom) {
+            map.setZoom(zoom);
+        }
+    }, [zoom]);
 
     React.useEffect(() => {
         const map = mapRef.current;
@@ -114,7 +130,7 @@ export function LeafletLocationMap({
 
             marker.on("dragend", () => {
                 const markerPosition = marker.getLatLng();
-                onSelectPosition({
+                onSelectPositionRef.current({
                     latitude: markerPosition.lat,
                     longitude: markerPosition.lng,
                 });
@@ -126,7 +142,7 @@ export function LeafletLocationMap({
         }
 
         markerRef.current.setLatLng(latLng);
-    }, [onSelectPosition, selectedPosition]);
+    }, [selectedPosition]);
 
     return (
         <div className={`overflow-hidden rounded-[10px] border border-[#e7e7ea] ${heightClassName}`}>
