@@ -26,6 +26,7 @@ abstract class NephDatabase : RoomDatabase() {
 
 object NephDatabaseProvider {
     @Volatile private var instance: NephDatabase? = null
+    private const val DatabaseName = "neph-offline.db"
 
     fun initialize(context: Context) {
         getInstance(context)
@@ -36,7 +37,7 @@ object NephDatabaseProvider {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 NephDatabase::class.java,
-                "neph-offline.db"
+                DatabaseName
             ).build().also { instance = it }
         }
     }
@@ -44,6 +45,14 @@ object NephDatabaseProvider {
     fun requireInstance(): NephDatabase {
         return checkNotNull(instance) {
             "NephDatabaseProvider must be initialized before use."
+        }
+    }
+
+    fun resetForTesting(context: Context) {
+        synchronized(this) {
+            instance?.close()
+            instance = null
+            context.applicationContext.deleteDatabase(DatabaseName)
         }
     }
 }

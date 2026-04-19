@@ -21,11 +21,12 @@ object OfflineSyncCoordinator {
         RequestHelpRepository.initialize(appContext)
 
         val database = NephDatabaseProvider.requireInstance()
-        val token = AuthSessionStore.getAccessToken()
+        recoverStaleInProgressOperations()
         val pendingOperations = database.syncOperationDao().getPendingOperations()
         Log.i(Tag, "Starting sync. Pending operations=${pendingOperations.size}")
 
         var retryNeeded = false
+        var token = AuthSessionStore.getAccessToken()
         val availabilityOperations = pendingOperations.filter {
             it.operationType == SyncOperationType.SET_AVAILABILITY
         }
@@ -35,19 +36,33 @@ object OfflineSyncCoordinator {
 
         for (operation in otherOperations.sortedBy { it.createdAtEpochMillis }) {
             retryNeeded = processOperation(operation, token) || retryNeeded
+            token = AuthSessionStore.getAccessToken()
         }
 
         if (availabilityOperations.isNotEmpty()) {
+            token = AuthSessionStore.getAccessToken()
             retryNeeded = processAvailabilityOperations(availabilityOperations, token) || retryNeeded
         }
 
         if (!retryNeeded) {
+            token = AuthSessionStore.getAccessToken()
             retryNeeded = pullLatestRemoteState(token) || retryNeeded
         }
 
         database.syncOperationDao().deleteSynced()
         Log.i(Tag, "Sync finished. retryNeeded=$retryNeeded")
         return retryNeeded
+    }
+
+    private suspend fun recoverStaleInProgressOperations(now: Long = System.currentTimeMillis()) {
+        val recoveredCount = NephDatabaseProvider.requireInstance().syncOperationDao()
+            .resetStaleInProgressOperations(
+                staleBeforeEpochMillis = SyncOperationRecoveryPolicy.staleInProgressCutoff(now),
+                error = "Previous sync attempt was interrupted; retrying this offline change."
+            )
+        if (recoveredCount > 0) {
+            Log.i(Tag, "Recovered stale IN_PROGRESS operations=$recoveredCount")
+        }
     }
 
     private suspend fun processOperation(operation: SyncOperationEntity, token: String?): Boolean {
@@ -60,6 +75,10 @@ object OfflineSyncCoordinator {
                 lastAttemptAtEpochMillis = operation.lastAttemptAtEpochMillis,
                 error = "Login required before this offline change can sync."
             )
+            return false
+        }
+
+        if (deferOperationUntilDependenciesSync(operation)) {
             return false
         }
 
@@ -88,6 +107,28 @@ object OfflineSyncCoordinator {
         } catch (error: Exception) {
             handleOperationFailure(operation, attempt, error.message, status = 0)
         }
+    }
+
+    private suspend fun deferOperationUntilDependenciesSync(operation: SyncOperationEntity): Boolean {
+        if (operation.operationType != SyncOperationType.UPDATE_HELP_REQUEST_STATUS) {
+            return false
+        }
+
+        val database = NephDatabaseProvider.requireInstance()
+        val entity = database.helpRequestDao().getByLocalId(operation.entityId) ?: return false
+        val remoteId = RequestHelpRepository.resolveRemoteRequestIdForSync(entity)
+        if (!remoteId.isNullOrBlank()) {
+            return false
+        }
+
+        database.syncOperationDao().updateStatus(
+            operationId = operation.operationId,
+            status = SyncOperationStatus.PENDING,
+            attemptCount = operation.attemptCount,
+            lastAttemptAtEpochMillis = operation.lastAttemptAtEpochMillis,
+            error = RequestHelpRepository.DeferredStatusSyncMessage
+        )
+        return true
     }
 
     private suspend fun processAvailabilityOperations(

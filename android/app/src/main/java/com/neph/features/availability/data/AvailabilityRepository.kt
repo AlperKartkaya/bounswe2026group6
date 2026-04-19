@@ -96,6 +96,13 @@ object AvailabilityRepository {
         return cachedState
     }
 
+    fun resetForTesting() {
+        cachedState = AvailabilityState()
+        if (::prefs.isInitialized) {
+            prefs.edit().clear().commit()
+        }
+    }
+
     suspend fun setAvailabilityStateForUi(state: AvailabilityState) {
         ensureInitialized()
         saveAvailabilityState(state.toEntity(syncStatus = state.syncStatus))
