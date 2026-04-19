@@ -21,6 +21,7 @@ object OfflineSyncCoordinator {
         RequestHelpRepository.initialize(appContext)
 
         val database = NephDatabaseProvider.requireInstance()
+        recoverStaleInProgressOperations()
         val pendingOperations = database.syncOperationDao().getPendingOperations()
         Log.i(Tag, "Starting sync. Pending operations=${pendingOperations.size}")
 
@@ -51,6 +52,17 @@ object OfflineSyncCoordinator {
         database.syncOperationDao().deleteSynced()
         Log.i(Tag, "Sync finished. retryNeeded=$retryNeeded")
         return retryNeeded
+    }
+
+    private suspend fun recoverStaleInProgressOperations(now: Long = System.currentTimeMillis()) {
+        val recoveredCount = NephDatabaseProvider.requireInstance().syncOperationDao()
+            .resetStaleInProgressOperations(
+                staleBeforeEpochMillis = SyncOperationRecoveryPolicy.staleInProgressCutoff(now),
+                error = "Previous sync attempt was interrupted; retrying this offline change."
+            )
+        if (recoveredCount > 0) {
+            Log.i(Tag, "Recovered stale IN_PROGRESS operations=$recoveredCount")
+        }
     }
 
     private suspend fun processOperation(operation: SyncOperationEntity, token: String?): Boolean {

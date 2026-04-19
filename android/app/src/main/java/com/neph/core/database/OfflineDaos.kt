@@ -139,6 +139,20 @@ interface SyncOperationDao {
         error: String?
     )
 
+    @Query(
+        """
+        UPDATE sync_operations
+        SET status = 'PENDING',
+            error = :error
+        WHERE status = 'IN_PROGRESS'
+          AND (lastAttemptAtEpochMillis IS NULL OR lastAttemptAtEpochMillis <= :staleBeforeEpochMillis)
+        """
+    )
+    suspend fun resetStaleInProgressOperations(
+        staleBeforeEpochMillis: Long,
+        error: String
+    ): Int
+
     @Query("DELETE FROM sync_operations WHERE operationId = :operationId")
     suspend fun delete(operationId: String)
 
