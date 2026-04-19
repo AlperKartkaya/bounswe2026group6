@@ -38,6 +38,19 @@ function toPickerValue(item: LocationSearchItem): LocationPickerValue {
     };
 }
 
+function toManualPickerValue(latitude: number, longitude: number): LocationPickerValue {
+    const normalizedLatitude = latitude.toFixed(6);
+    const normalizedLongitude = longitude.toFixed(6);
+
+    return {
+        placeId: `manual:${normalizedLatitude},${normalizedLongitude}`,
+        displayName: `Pinned location (${normalizedLatitude}, ${normalizedLongitude})`,
+        latitude,
+        longitude,
+        administrative: {},
+    };
+}
+
 export function LocationPicker({
     countryCode = "TR",
     value,
@@ -120,13 +133,7 @@ export function LocationPicker({
                 }
 
                 setError(err instanceof Error ? err.message : "Could not resolve selected location.");
-                onChange({
-                    placeId: "",
-                    displayName: "",
-                    latitude,
-                    longitude,
-                    administrative: {},
-                });
+                onChange(toManualPickerValue(latitude, longitude));
             } finally {
                 if (currentReverseRequestId === reverseRequestIdRef.current) {
                     setResolving(false);
@@ -178,6 +185,7 @@ export function LocationPicker({
             <div className="flex flex-col gap-2 sm:flex-row">
                 <TextInput
                     id={searchInputId}
+                    label="Search location"
                     placeholder="Search location"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}

@@ -5,13 +5,6 @@ import L from "leaflet";
 import markerIcon2xAsset from "leaflet/dist/images/marker-icon-2x.png";
 import markerIconAsset from "leaflet/dist/images/marker-icon.png";
 import markerShadowAsset from "leaflet/dist/images/marker-shadow.png";
-import {
-    MapContainer,
-    Marker,
-    TileLayer,
-    useMap,
-    useMapEvents,
-} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
 type LatLng = {
@@ -41,35 +34,6 @@ const locationMarkerIcon = L.icon({
     shadowSize: [41, 41],
 });
 
-function MapClickListener({
-    onSelectPosition,
-}: {
-    onSelectPosition: (position: LatLng) => void;
-}) {
-    useMapEvents({
-        click(event) {
-            onSelectPosition({
-                latitude: event.latlng.lat,
-                longitude: event.latlng.lng,
-            });
-        },
-    });
-
-    return null;
-}
-
-function RecenterOnChange({ center }: { center: LatLng }) {
-    const map = useMap();
-
-    React.useEffect(() => {
-        map.setView([center.latitude, center.longitude], map.getZoom(), {
-            animate: true,
-        });
-    }, [center.latitude, center.longitude, map]);
-
-    return null;
-}
-
 export function LeafletLocationMap({
     center,
     zoom = 12,
@@ -77,41 +41,96 @@ export function LeafletLocationMap({
     heightClassName = "h-72",
     onSelectPosition,
 }: LeafletLocationMapProps) {
+    const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
+    const mapRef = React.useRef<L.Map | null>(null);
+    const markerRef = React.useRef<L.Marker | null>(null);
+
+    React.useEffect(() => {
+        if (!mapContainerRef.current || mapRef.current) {
+            return;
+        }
+
+        const map = L.map(mapContainerRef.current, {
+            center: [center.latitude, center.longitude],
+            zoom,
+            scrollWheelZoom: true,
+        });
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution:
+                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+
+        map.on("click", (event: L.LeafletMouseEvent) => {
+            onSelectPosition({
+                latitude: event.latlng.lat,
+                longitude: event.latlng.lng,
+            });
+        });
+
+        mapRef.current = map;
+
+        return () => {
+            markerRef.current?.remove();
+            markerRef.current = null;
+            map.remove();
+            mapRef.current = null;
+        };
+    }, [center.latitude, center.longitude, onSelectPosition, zoom]);
+
+    React.useEffect(() => {
+        const map = mapRef.current;
+        if (!map) {
+            return;
+        }
+
+        map.setView([center.latitude, center.longitude], map.getZoom(), {
+            animate: true,
+        });
+    }, [center.latitude, center.longitude]);
+
+    React.useEffect(() => {
+        const map = mapRef.current;
+        if (!map) {
+            return;
+        }
+
+        if (!selectedPosition) {
+            markerRef.current?.remove();
+            markerRef.current = null;
+            return;
+        }
+
+        const latLng: L.LatLngExpression = [
+            selectedPosition.latitude,
+            selectedPosition.longitude,
+        ];
+
+        if (!markerRef.current) {
+            const marker = L.marker(latLng, {
+                icon: locationMarkerIcon,
+                draggable: true,
+            });
+
+            marker.on("dragend", () => {
+                const markerPosition = marker.getLatLng();
+                onSelectPosition({
+                    latitude: markerPosition.lat,
+                    longitude: markerPosition.lng,
+                });
+            });
+
+            marker.addTo(map);
+            markerRef.current = marker;
+            return;
+        }
+
+        markerRef.current.setLatLng(latLng);
+    }, [onSelectPosition, selectedPosition]);
+
     return (
         <div className={`overflow-hidden rounded-[10px] border border-[#e7e7ea] ${heightClassName}`}>
-            <MapContainer
-                center={[center.latitude, center.longitude]}
-                zoom={zoom}
-                className="h-full w-full"
-                scrollWheelZoom
-            >
-                <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-
-                <MapClickListener onSelectPosition={onSelectPosition} />
-                <RecenterOnChange center={center} />
-
-                {selectedPosition ? (
-                    <Marker
-                        icon={locationMarkerIcon}
-                        position={[selectedPosition.latitude, selectedPosition.longitude]}
-                        draggable
-                        eventHandlers={{
-                            dragend(event) {
-                                const marker = event.target;
-                                const latLng = marker.getLatLng();
-
-                                onSelectPosition({
-                                    latitude: latLng.lat,
-                                    longitude: latLng.lng,
-                                });
-                            },
-                        }}
-                    />
-                ) : null}
-            </MapContainer>
+            <div ref={mapContainerRef} className="h-full w-full" />
         </div>
     );
 }
