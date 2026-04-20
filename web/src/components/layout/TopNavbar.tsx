@@ -10,11 +10,12 @@ const navItemsOrdered = [
     { label: "Home", href: "/home" },
     { label: "News", href: "/news" },
     { label: "Emergency Numbers", href: "/emergency-numbers" },
+    { label: "Gathering Areas", href: "/gathering-areas" },
     { label: "Profile", href: "/profile" },
     { label: "Privacy & Security", href: "/privacy-security" },
 ];
 
-const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers"]);
+const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers", "/gathering-areas"]);
 
 export function TopNavbar() {
     const router = useRouter();
