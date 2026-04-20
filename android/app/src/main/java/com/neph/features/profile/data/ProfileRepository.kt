@@ -56,6 +56,13 @@ object ProfileRepository {
 
     suspend fun fetchAndCacheRemoteProfile(): ProfileData {
         ensureInitialized()
+
+        try {
+            LocationTreeRepository.ensureLocationData()
+        } catch (_: Exception) {
+            // Keep fallback location mapping when location tree is unavailable.
+        }
+
         val token = AuthSessionStore.getAccessToken().orEmpty()
         check(token.isNotBlank()) { "Access token is required before loading the profile." }
 
@@ -86,6 +93,13 @@ object ProfileRepository {
 
     suspend fun syncProfile(profile: ProfileData): ProfileData {
         ensureInitialized()
+
+        try {
+            LocationTreeRepository.ensureLocationData()
+        } catch (_: Exception) {
+            // Keep fallback location mapping when location tree is unavailable.
+        }
+
         val token = AuthSessionStore.getAccessToken().orEmpty()
         check(token.isNotBlank()) { "Access token is required before saving the profile." }
 

@@ -144,12 +144,92 @@ class FakeNephBackend {
             route == "/availability/status" && method == "GET" -> handleAvailabilityStatus(token)
             route == "/availability/my-assignment" && method == "GET" -> handleCurrentAssignment(token)
             route == "/help-requests" && method == "GET" -> handleHelpRequestList(token)
+            route == "/location/tree" && method == "GET" -> handleLocationTree(uri)
             else -> throw ApiException(
                 message = "Unhandled fake backend request: $method $path",
                 status = 500,
                 code = "UNHANDLED_FAKE_ROUTE"
             )
         }
+    }
+
+    private fun handleLocationTree(uri: Uri): JSONObject {
+        val countryCode = uri.getQueryParameter("countryCode").orEmpty().uppercase().ifBlank { "TR" }
+        if (countryCode != "TR") {
+            throw ApiException("No location tree found for countryCode", 404, "NOT_FOUND")
+        }
+
+        return JSONObject()
+            .put("countryCode", "TR")
+            .put(
+                "tree",
+                JSONObject().put(
+                    "TR",
+                    JSONObject()
+                        .put("label", "Turkey")
+                        .put(
+                            "cities",
+                            JSONObject()
+                                .put(
+                                    "istanbul",
+                                    JSONObject()
+                                        .put("label", "Istanbul")
+                                        .put(
+                                            "districts",
+                                            JSONObject()
+                                                .put(
+                                                    "kadikoy",
+                                                    JSONObject()
+                                                        .put("label", "Kadıköy")
+                                                        .put(
+                                                            "neighborhoods",
+                                                            JSONArray()
+                                                                .put(JSONObject().put("label", "Bostancı").put("value", "bostanci"))
+                                                                .put(JSONObject().put("label", "Erenköy").put("value", "erenkoy"))
+                                                        )
+                                                )
+                                                .put(
+                                                    "besiktas",
+                                                    JSONObject()
+                                                        .put("label", "Beşiktaş")
+                                                        .put(
+                                                            "neighborhoods",
+                                                            JSONArray()
+                                                                .put(JSONObject().put("label", "Balmumcu").put("value", "balmumcu"))
+                                                                .put(JSONObject().put("label", "Kuruçeşme").put("value", "kurucesme"))
+                                                        )
+                                                )
+                                        )
+                                )
+                                .put(
+                                    "ankara",
+                                    JSONObject()
+                                        .put("label", "Ankara")
+                                        .put(
+                                            "districts",
+                                            JSONObject()
+                                                .put(
+                                                    "cankaya",
+                                                    JSONObject()
+                                                        .put("label", "Çankaya")
+                                                        .put(
+                                                            "neighborhoods",
+                                                            JSONArray()
+                                                                .put(JSONObject().put("label", "Anıttepe").put("value", "anittepe"))
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                )
+            )
+            .put(
+                "meta",
+                JSONObject()
+                    .put("cityCount", 2)
+                    .put("districtCount", 3)
+                    .put("neighborhoodCount", 5)
+            )
     }
 
     private fun handleSignup(body: JSONObject?): JSONObject {
