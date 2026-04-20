@@ -16,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.neph.core.network.ApiException
 import com.neph.features.auth.data.AuthRepository
+import com.neph.features.profile.data.LocationData
+import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.locationData
 import com.neph.features.profile.data.toEditableString
@@ -41,11 +43,13 @@ fun ProfileScreen(
     val spacing = LocalNephSpacing.current
 
     var profile by remember { mutableStateOf(ProfileRepository.getProfile()) }
+    var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         try {
+            availableLocationData = LocationTreeRepository.ensureLocationData()
             profile = ProfileRepository.fetchAndCacheRemoteProfile()
             error = ""
         } catch (cancellationException: CancellationException) {
@@ -85,10 +89,10 @@ fun ProfileScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(spacing.lg)
             ) {
-                val countryLabel = profile.country?.let { locationData[it]?.label ?: it }
+                val countryLabel = profile.country?.let { availableLocationData[it]?.label ?: it }
                 val cityLabel = profile.city?.let { cityKey ->
                     val countryKey = profile.country.orEmpty()
-                    locationData[countryKey]?.cities?.get(cityKey)?.label ?: cityKey
+                    availableLocationData[countryKey]?.cities?.get(cityKey)?.label ?: cityKey
                 }
 
                 if (error.isNotBlank()) {

@@ -116,7 +116,10 @@ fun findCountryKeyByLabel(label: String?, locations: LocationData = locationData
         return ""
     }
 
-    return locations.entries.firstOrNull { it.value.label == label }?.key.orEmpty()
+    val normalizedLabel = label.trim()
+    return locations.entries.firstOrNull {
+        it.value.label.equals(normalizedLabel, ignoreCase = true)
+    }?.key.orEmpty()
 }
 
 fun findCityKeyByLabel(
@@ -129,7 +132,10 @@ fun findCityKeyByLabel(
     }
 
     val country = locations[countryKey] ?: return ""
-    return country.cities.entries.firstOrNull { it.value.label == label }?.key.orEmpty()
+    val normalizedLabel = label.trim()
+    return country.cities.entries.firstOrNull {
+        it.value.label.equals(normalizedLabel, ignoreCase = true)
+    }?.key.orEmpty()
 }
 
 fun findDistrictKeyByLabel(
@@ -143,7 +149,10 @@ fun findDistrictKeyByLabel(
     }
 
     val city = locations[countryKey]?.cities?.get(cityKey) ?: return ""
-    return city.districts.entries.firstOrNull { it.value.label == label }?.key.orEmpty()
+    val normalizedLabel = label.trim()
+    return city.districts.entries.firstOrNull {
+        it.value.label.equals(normalizedLabel, ignoreCase = true)
+    }?.key.orEmpty()
 }
 
 fun findNeighborhoodValueByLabel(
@@ -164,7 +173,10 @@ fun findNeighborhoodValueByLabel(
         ?.get(districtKey)
         ?: return ""
 
-    return district.neighborhoods.firstOrNull { it.label == label }?.value.orEmpty()
+    val normalizedLabel = label.trim()
+    return district.neighborhoods.firstOrNull {
+        it.label.equals(normalizedLabel, ignoreCase = true)
+    }?.value.orEmpty()
 }
 
 fun splitAddressParts(address: String?): Triple<String?, String?, String?> {
@@ -186,6 +198,181 @@ fun splitAddressParts(address: String?): Triple<String?, String?, String?> {
     val extraAddress = parts.drop(2).joinToString(", ").ifBlank { null }
 
     return Triple(districtLabel, neighborhoodLabel, extraAddress)
+}
+
+private fun resolveCountryKey(
+    countryKeyOrLabel: String?,
+    locations: LocationData = locationData
+): String {
+    val raw = countryKeyOrLabel?.trim().orEmpty()
+    if (raw.isBlank()) {
+        return ""
+    }
+
+    val normalizedKey = raw.lowercase(Locale.ROOT)
+    if (locations.containsKey(normalizedKey)) {
+        return normalizedKey
+    }
+
+    return findCountryKeyByLabel(raw, locations)
+}
+
+fun resolveCountrySelectionKey(
+    countryKeyOrLabel: String?,
+    locations: LocationData = locationData
+): String? {
+    return resolveCountryKey(countryKeyOrLabel, locations).ifBlank { null }
+}
+
+private fun resolveCityKey(
+    countryKeyOrLabel: String?,
+    cityKeyOrLabel: String?,
+    locations: LocationData = locationData
+): String {
+    val countryKey = resolveCountryKey(countryKeyOrLabel, locations)
+    val rawCity = cityKeyOrLabel?.trim().orEmpty()
+    if (countryKey.isBlank() || rawCity.isBlank()) {
+        return ""
+    }
+
+    val normalizedCityKey = rawCity.lowercase(Locale.ROOT)
+    val cityByKey = locations[countryKey]?.cities?.get(rawCity)
+        ?: locations[countryKey]?.cities?.get(normalizedCityKey)
+    if (cityByKey != null) {
+        return if (locations[countryKey]?.cities?.containsKey(rawCity) == true) rawCity else normalizedCityKey
+    }
+
+    return findCityKeyByLabel(countryKey, rawCity, locations)
+}
+
+private fun resolveDistrictKey(
+    countryKeyOrLabel: String?,
+    cityKeyOrLabel: String?,
+    districtKeyOrLabel: String?,
+    locations: LocationData = locationData
+): String {
+    val countryKey = resolveCountryKey(countryKeyOrLabel, locations)
+    val cityKey = resolveCityKey(countryKey, cityKeyOrLabel, locations)
+    val rawDistrict = districtKeyOrLabel?.trim().orEmpty()
+
+    if (countryKey.isBlank() || cityKey.isBlank() || rawDistrict.isBlank()) {
+        return ""
+    }
+
+    val normalizedDistrictKey = rawDistrict.lowercase(Locale.ROOT)
+    val districtByKey = locations[countryKey]?.cities?.get(cityKey)?.districts?.get(rawDistrict)
+        ?: locations[countryKey]?.cities?.get(cityKey)?.districts?.get(normalizedDistrictKey)
+    if (districtByKey != null) {
+        return if (locations[countryKey]?.cities?.get(cityKey)?.districts?.containsKey(rawDistrict) == true) {
+            rawDistrict
+        } else {
+            normalizedDistrictKey
+        }
+    }
+
+    return findDistrictKeyByLabel(countryKey, cityKey, rawDistrict, locations)
+}
+
+fun resolveCountryLabel(
+    countryKeyOrLabel: String?,
+    locations: LocationData = locationData
+): String? {
+    val raw = countryKeyOrLabel?.trim().orEmpty()
+    if (raw.isBlank()) {
+        return null
+    }
+
+    val countryKey = resolveCountryKey(raw, locations)
+    if (countryKey.isBlank()) {
+        return raw
+    }
+
+    return locations[countryKey]?.label ?: raw
+}
+
+fun resolveCityLabel(
+    countryKeyOrLabel: String?,
+    cityKeyOrLabel: String?,
+    locations: LocationData = locationData
+): String? {
+    val rawCity = cityKeyOrLabel?.trim().orEmpty()
+    if (rawCity.isBlank()) {
+        return null
+    }
+
+    val countryKey = resolveCountryKey(countryKeyOrLabel, locations)
+    if (countryKey.isBlank()) {
+        return rawCity
+    }
+
+    return locations[countryKey]?.cities?.get(rawCity)?.label
+        ?: locations[countryKey]?.cities?.get(findCityKeyByLabel(countryKey, rawCity, locations))?.label
+        ?: rawCity
+}
+
+fun resolveDistrictLabel(
+    countryKeyOrLabel: String?,
+    cityKeyOrLabel: String?,
+    districtKeyOrLabel: String?,
+    locations: LocationData = locationData
+): String? {
+    val rawDistrict = districtKeyOrLabel?.trim().orEmpty()
+    if (rawDistrict.isBlank()) {
+        return null
+    }
+
+    val countryKey = resolveCountryKey(countryKeyOrLabel, locations)
+    val cityKey = resolveCityKey(countryKey, cityKeyOrLabel, locations)
+    if (countryKey.isBlank() || cityKey.isBlank()) {
+        return rawDistrict
+    }
+
+    return locations[countryKey]
+        ?.cities
+        ?.get(cityKey)
+        ?.districts
+        ?.get(rawDistrict)
+        ?.label
+        ?: locations[countryKey]
+            ?.cities
+            ?.get(cityKey)
+            ?.districts
+            ?.get(findDistrictKeyByLabel(countryKey, cityKey, rawDistrict, locations))
+            ?.label
+        ?: rawDistrict
+}
+
+fun resolveNeighborhoodLabel(
+    countryKeyOrLabel: String?,
+    cityKeyOrLabel: String?,
+    districtKeyOrLabel: String?,
+    neighborhoodValueOrLabel: String?,
+    locations: LocationData = locationData
+): String? {
+    val rawNeighborhood = neighborhoodValueOrLabel?.trim().orEmpty()
+    if (rawNeighborhood.isBlank()) {
+        return null
+    }
+
+    val countryKey = resolveCountryKey(countryKeyOrLabel, locations)
+    val cityKey = resolveCityKey(countryKey, cityKeyOrLabel, locations)
+    val districtKey = resolveDistrictKey(countryKey, cityKey, districtKeyOrLabel, locations)
+
+    if (countryKey.isBlank() || cityKey.isBlank() || districtKey.isBlank()) {
+        return rawNeighborhood
+    }
+
+    val neighborhoods = locations[countryKey]
+        ?.cities
+        ?.get(cityKey)
+        ?.districts
+        ?.get(districtKey)
+        ?.neighborhoods
+        ?: return rawNeighborhood
+
+    return neighborhoods.firstOrNull { it.value.equals(rawNeighborhood, ignoreCase = true) }?.label
+        ?: neighborhoods.firstOrNull { it.label.equals(rawNeighborhood, ignoreCase = true) }?.label
+        ?: rawNeighborhood
 }
 
 fun normalizeBloodType(rawBloodType: String?): String? {

@@ -19,6 +19,8 @@ import com.neph.core.network.ApiException
 import com.neph.features.auth.data.AuthRepository
 import com.neph.features.auth.data.AuthSessionStore
 import com.neph.features.auth.util.countryCodeOptions
+import com.neph.features.profile.data.LocationData
+import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.ProfileData
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.PhoneParts
@@ -159,22 +161,28 @@ private fun toggleSelection(current: List<String>, option: String): List<String>
     }
 }
 
-private fun findCountryLabel(countryKey: String): String =
-    locationData[countryKey]?.label.orEmpty()
+private fun findCountryLabel(countryKey: String, locations: LocationData): String =
+    locations[countryKey]?.label.orEmpty()
 
-private fun findCityLabel(countryKey: String, cityKey: String): String =
-    locationData[countryKey]?.cities?.get(cityKey)?.label.orEmpty()
+private fun findCityLabel(countryKey: String, cityKey: String, locations: LocationData): String =
+    locations[countryKey]?.cities?.get(cityKey)?.label.orEmpty()
 
-private fun findDistrictLabel(countryKey: String, cityKey: String, districtKey: String): String =
-    locationData[countryKey]?.cities?.get(cityKey)?.districts?.get(districtKey)?.label.orEmpty()
+private fun findDistrictLabel(
+    countryKey: String,
+    cityKey: String,
+    districtKey: String,
+    locations: LocationData
+): String =
+    locations[countryKey]?.cities?.get(cityKey)?.districts?.get(districtKey)?.label.orEmpty()
 
 private fun findNeighborhoodLabel(
     countryKey: String,
     cityKey: String,
     districtKey: String,
-    neighborhoodKey: String
+    neighborhoodKey: String,
+    locations: LocationData
 ): String =
-    locationData[countryKey]
+    locations[countryKey]
         ?.cities
         ?.get(cityKey)
         ?.districts
@@ -242,7 +250,10 @@ private fun RequestHelpFieldErrors.hasAny(): Boolean {
     ).any { !it.isNullOrBlank() }
 }
 
-private fun buildSubmission(state: RequestHelpFormState): RequestHelpSubmission {
+private fun buildSubmission(
+    state: RequestHelpFormState,
+    locations: LocationData
+): RequestHelpSubmission {
     val primaryPhone = requireNotNull(parseBackendPhoneNumber(state.countryCode, state.phoneNumber))
     val alternativePhone = state.alternativePhone
         .takeIf { it.isNotBlank() }
@@ -257,15 +268,16 @@ private fun buildSubmission(state: RequestHelpFormState): RequestHelpSubmission 
         vulnerableGroups = state.vulnerableGroups.map { it.trim() },
         bloodType = state.bloodType.trim(),
         location = RequestHelpLocationSubmission(
-            country = findCountryLabel(state.country).ifBlank { state.country.trim() },
-            city = findCityLabel(state.country, state.city).ifBlank { state.city.trim() },
-            district = findDistrictLabel(state.country, state.city, state.district)
+            country = findCountryLabel(state.country, locations).ifBlank { state.country.trim() },
+            city = findCityLabel(state.country, state.city, locations).ifBlank { state.city.trim() },
+            district = findDistrictLabel(state.country, state.city, state.district, locations)
                 .ifBlank { state.district.trim() },
             neighborhood = findNeighborhoodLabel(
                 state.country,
                 state.city,
                 state.district,
-                state.neighborhood
+                state.neighborhood,
+                locations
             ).ifBlank { state.neighborhood.trim() },
             extraAddress = state.shortAddress.trim()
         ),
@@ -295,10 +307,25 @@ fun RequestHelpScreen(
         )
     }
     var fieldErrors by remember { mutableStateOf(RequestHelpFieldErrors()) }
+    var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
+    var locationLoading by remember { mutableStateOf(true) }
     var loading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var infoMessage by remember { mutableStateOf("") }
     var checkingActiveRequest by remember { mutableStateOf(isLoggedIn) }
+
+    LaunchedEffect(Unit) {
+        try {
+            availableLocationData = LocationTreeRepository.ensureLocationData()
+        } catch (cancellationException: CancellationException) {
+            throw cancellationException
+        } catch (_: Exception) {
+            availableLocationData = locationData
+            infoMessage = "Could not refresh location options. Showing saved location list."
+        } finally {
+            locationLoading = false
+        }
+    }
 
     LaunchedEffect(sessionToken) {
         if (!isLoggedIn) {
@@ -359,7 +386,7 @@ fun RequestHelpScreen(
 
                 RequestHelpRepository.createHelpRequest(
                     token = sessionToken,
-                    submission = buildSubmission(formState)
+                    submission = buildSubmission(formState, availableLocationData)
                 )
                 infoMessage = "Help request saved on this device and queued for sync."
                 onNavigateToMyHelpRequests()
@@ -493,6 +520,10 @@ fun RequestHelpScreen(
                         subtitle = "Use the same location structure as your profile."
                     )
 
+                    if (locationLoading) {
+                        HelperText(text = "Loading location options...")
+                    }
+
                     LocationSelector(
                         country = formState.country,
                         city = formState.city,
@@ -510,7 +541,8 @@ fun RequestHelpScreen(
                         onNeighborhoodChange = {
                             formState = formState.copy(neighborhood = it)
                         },
-                        locationData = locationData,
+                        locationData = availableLocationData,
+                        enabled = !locationLoading,
                         countryError = fieldErrors.country,
                         cityError = fieldErrors.city,
                         districtError = fieldErrors.district,

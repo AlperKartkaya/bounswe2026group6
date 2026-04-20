@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +22,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.neph.core.network.ApiException
 import com.neph.features.auth.util.countryCodeOptions
 import com.neph.features.profile.data.ProfileRepository
+import com.neph.features.profile.data.LocationData
+import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.bloodTypeOptions
 import com.neph.features.profile.data.combinePhoneNumber
 import com.neph.features.profile.data.expertiseOptionsFor
@@ -77,6 +80,23 @@ fun CompleteProfileScreen(
     var loading by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf("") }
     var info by rememberSaveable { mutableStateOf("") }
+    var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
+    var locationLoading by remember { mutableStateOf(true) }
+    var locationInfo by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        try {
+            availableLocationData = LocationTreeRepository.ensureLocationData()
+        } catch (cancellationException: CancellationException) {
+            throw cancellationException
+        } catch (_: Exception) {
+            availableLocationData = locationData
+            locationInfo = "Could not refresh location options. Showing saved location list."
+        } finally {
+            locationLoading = false
+        }
+    }
+
     fun handleSave() {
         error = ""
         info = ""
@@ -290,6 +310,14 @@ fun CompleteProfileScreen(
 
             Text("Location", style = MaterialTheme.typography.titleMedium)
 
+            if (locationLoading) {
+                HelperText(text = "Loading location options...")
+            }
+
+            if (locationInfo.isNotBlank()) {
+                HelperText(text = locationInfo)
+            }
+
             LocationSelector(
                 country = country,
                 city = city,
@@ -311,7 +339,8 @@ fun CompleteProfileScreen(
                     neighborhood = ""
                 },
                 onNeighborhoodChange = { neighborhood = it },
-                locationData = locationData
+                locationData = availableLocationData,
+                enabled = !locationLoading
             )
 
             AppTextField(

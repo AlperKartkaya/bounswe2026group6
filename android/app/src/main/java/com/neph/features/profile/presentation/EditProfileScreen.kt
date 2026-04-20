@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import com.neph.core.network.ApiException
 import com.neph.features.auth.util.countryCodeOptions
+import com.neph.features.profile.data.LocationData
+import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.ProfileData
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.bloodTypeOptions
@@ -65,6 +67,9 @@ fun EditProfileScreen(
     var heightText by rememberSaveable { mutableStateOf(profile.height.toEditableString()) }
     var weightText by rememberSaveable { mutableStateOf(profile.weight.toEditableString()) }
     var ageText by rememberSaveable { mutableStateOf(profile.age?.toString().orEmpty()) }
+    var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
+    var locationLoading by remember { mutableStateOf(true) }
+    var locationInfo by rememberSaveable { mutableStateOf("") }
 
     val scope = rememberCoroutineScope()
     val spacing = LocalNephSpacing.current
@@ -97,6 +102,19 @@ fun EditProfileScreen(
             weightText = profile.weight.toEditableString()
             ageText = profile.age?.toString().orEmpty()
             info = "Could not refresh your profile. Showing saved information."
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            availableLocationData = LocationTreeRepository.ensureLocationData()
+        } catch (cancellationException: CancellationException) {
+            throw cancellationException
+        } catch (_: Exception) {
+            availableLocationData = locationData
+            locationInfo = "Could not refresh location options. Showing saved location list."
+        } finally {
+            locationLoading = false
         }
     }
 
@@ -321,6 +339,14 @@ fun EditProfileScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     SectionHeader(title = "Location")
 
+                    if (locationLoading) {
+                        HelperText(text = "Loading location options...")
+                    }
+
+                    if (locationInfo.isNotBlank()) {
+                        HelperText(text = locationInfo)
+                    }
+
                     LocationSelector(
                         country = profile.country.orEmpty(),
                         city = profile.city.orEmpty(),
@@ -338,7 +364,8 @@ fun EditProfileScreen(
                         onNeighborhoodChange = {
                             profile = profile.copy(neighborhood = it)
                         },
-                        locationData = locationData
+                        locationData = availableLocationData,
+                        enabled = !locationLoading
                     )
 
                     AppTextField(

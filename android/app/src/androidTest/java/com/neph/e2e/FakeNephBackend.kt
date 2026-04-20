@@ -10,9 +10,23 @@ import mockwebserver3.RecordedRequest
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.time.Instant
+import java.util.Locale
 
 private const val FakeBackendPort = 13006
 private const val ApiPathPrefix = "/api"
+private val IsoAlpha2CountryCodePattern = Regex("^[A-Za-z]{2}$")
+private val LocationPatchAllowedKeys = setOf(
+    "address",
+    "city",
+    "country",
+    "latitude",
+    "longitude",
+    "displayAddress",
+    "placeId",
+    "administrative",
+    "coordinate"
+)
 
 data class FakeProfileState(
     var firstName: String = "",
@@ -29,6 +43,16 @@ data class FakeProfileState(
     var country: String? = null,
     var city: String? = null,
     var address: String? = null,
+    var displayAddress: String? = null,
+    var countryCode: String? = null,
+    var district: String? = null,
+    var neighborhood: String? = null,
+    var extraAddress: String? = null,
+    var postalCode: String? = null,
+    var placeId: String? = null,
+    var latitude: Double? = null,
+    var longitude: Double? = null,
+    var locationLastUpdated: String? = null,
     var locationSharingEnabled: Boolean = false,
     var profession: String? = null,
     var expertiseAreas: List<String> = emptyList()
@@ -41,6 +65,23 @@ private data class FakeUserState(
     var verified: Boolean,
     var accessToken: String = "access-token-1",
     var profile: FakeProfileState? = null
+)
+
+private object MissingJsonField
+
+private data class NormalizedLocationPatch(
+    val address: String?,
+    val displayAddress: String?,
+    val city: String?,
+    val country: String?,
+    val countryCode: String?,
+    val district: String?,
+    val neighborhood: String?,
+    val extraAddress: String?,
+    val postalCode: String?,
+    val placeId: String?,
+    val latitude: Double?,
+    val longitude: Double?
 )
 
 class FakeNephBackend {
@@ -144,12 +185,92 @@ class FakeNephBackend {
             route == "/availability/status" && method == "GET" -> handleAvailabilityStatus(token)
             route == "/availability/my-assignment" && method == "GET" -> handleCurrentAssignment(token)
             route == "/help-requests" && method == "GET" -> handleHelpRequestList(token)
+            route == "/location/tree" && method == "GET" -> handleLocationTree(uri)
             else -> throw ApiException(
                 message = "Unhandled fake backend request: $method $path",
                 status = 500,
                 code = "UNHANDLED_FAKE_ROUTE"
             )
         }
+    }
+
+    private fun handleLocationTree(uri: Uri): JSONObject {
+        val countryCode = uri.getQueryParameter("countryCode").orEmpty().uppercase().ifBlank { "TR" }
+        if (countryCode != "TR") {
+            throw ApiException("No location tree found for countryCode", 404, "NOT_FOUND")
+        }
+
+        return JSONObject()
+            .put("countryCode", "TR")
+            .put(
+                "tree",
+                JSONObject().put(
+                    "TR",
+                    JSONObject()
+                        .put("label", "Turkey")
+                        .put(
+                            "cities",
+                            JSONObject()
+                                .put(
+                                    "istanbul",
+                                    JSONObject()
+                                        .put("label", "Istanbul")
+                                        .put(
+                                            "districts",
+                                            JSONObject()
+                                                .put(
+                                                    "kadikoy",
+                                                    JSONObject()
+                                                        .put("label", "Kadıköy")
+                                                        .put(
+                                                            "neighborhoods",
+                                                            JSONArray()
+                                                                .put(JSONObject().put("label", "Bostancı").put("value", "bostanci"))
+                                                                .put(JSONObject().put("label", "Erenköy").put("value", "erenkoy"))
+                                                        )
+                                                )
+                                                .put(
+                                                    "besiktas",
+                                                    JSONObject()
+                                                        .put("label", "Beşiktaş")
+                                                        .put(
+                                                            "neighborhoods",
+                                                            JSONArray()
+                                                                .put(JSONObject().put("label", "Balmumcu").put("value", "balmumcu"))
+                                                                .put(JSONObject().put("label", "Kuruçeşme").put("value", "kurucesme"))
+                                                        )
+                                                )
+                                        )
+                                )
+                                .put(
+                                    "ankara",
+                                    JSONObject()
+                                        .put("label", "Ankara")
+                                        .put(
+                                            "districts",
+                                            JSONObject()
+                                                .put(
+                                                    "cankaya",
+                                                    JSONObject()
+                                                        .put("label", "Çankaya")
+                                                        .put(
+                                                            "neighborhoods",
+                                                            JSONArray()
+                                                                .put(JSONObject().put("label", "Anıttepe").put("value", "anittepe"))
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                )
+            )
+            .put(
+                "meta",
+                JSONObject()
+                    .put("cityCount", 2)
+                    .put("districtCount", 3)
+                    .put("neighborhoodCount", 5)
+            )
     }
 
     private fun handleSignup(body: JSONObject?): JSONObject {
@@ -282,9 +403,77 @@ class FakeNephBackend {
     private fun handlePatchLocation(token: String?, body: JSONObject?): JSONObject {
         val user = requireAuthorizedUser(token)
         val profile = ensureProfile(user)
-        profile.country = body.optStringOrNull("country")
-        profile.city = body.optStringOrNull("city")
-        profile.address = body.optStringOrNull("address")
+        val payload = body ?: JSONObject()
+
+        validateLocationPatchPayload(payload)
+
+        val administrative = payload.optJSONObject("administrative")
+        val coordinate = payload.optJSONObject("coordinate")
+
+        val hasAddress =
+            payload.has("address") ||
+                payload.has("displayAddress") ||
+                administrative.hasOwn("neighborhood") ||
+                administrative.hasOwn("district") ||
+                administrative.hasOwn("extraAddress")
+        val hasDisplayAddress = hasAddress || payload.has("displayAddress")
+        val hasCity = payload.has("city") || administrative.hasOwn("city")
+        val hasCountry = payload.has("country") || administrative.hasOwn("country")
+        val hasCountryCode = administrative.hasOwn("countryCode")
+        val hasDistrict = administrative.hasOwn("district")
+        val hasNeighborhood = administrative.hasOwn("neighborhood")
+        val hasExtraAddress = administrative.hasOwn("extraAddress")
+        val hasPostalCode = administrative.hasOwn("postalCode")
+        val hasPlaceId = payload.has("placeId")
+        val hasLatitude = payload.has("latitude") || coordinate.hasOwn("latitude")
+        val hasLongitude = payload.has("longitude") || coordinate.hasOwn("longitude")
+
+        val normalized = normalizeLocationPatch(payload, administrative, coordinate)
+
+        if (hasAddress) {
+            profile.address = normalized.address
+        }
+        if (hasDisplayAddress) {
+            profile.displayAddress = normalized.displayAddress
+        }
+        if (hasCity) {
+            profile.city = normalized.city
+        }
+        if (hasCountry) {
+            profile.country = normalized.country
+        }
+        if (hasCountryCode) {
+            profile.countryCode = normalized.countryCode
+        }
+        if (hasDistrict) {
+            profile.district = normalized.district
+        }
+        if (hasNeighborhood) {
+            profile.neighborhood = normalized.neighborhood
+        }
+        if (hasExtraAddress) {
+            profile.extraAddress = normalized.extraAddress
+        }
+        if (hasPostalCode) {
+            profile.postalCode = normalized.postalCode
+        }
+        if (hasPlaceId) {
+            profile.placeId = normalized.placeId
+        }
+        if (hasLatitude) {
+            profile.latitude = normalized.latitude
+        }
+        if (hasLongitude) {
+            profile.longitude = normalized.longitude
+        }
+
+        if (
+            hasAddress || hasDisplayAddress || hasCity || hasCountry || hasCountryCode || hasDistrict ||
+                hasNeighborhood || hasExtraAddress || hasPostalCode || hasPlaceId || hasLatitude || hasLongitude
+        ) {
+            profile.locationLastUpdated = Instant.now().toString()
+        }
+
         return profileResponseJson(user, profile)
     }
 
@@ -378,12 +567,38 @@ class FakeNephBackend {
             .put(
                 "locationProfile",
                 JSONObject()
-                    .put("address", profile.address)
-                    .put("city", profile.city)
-                    .put("country", profile.country)
-                    .put("latitude", JSONObject.NULL)
-                    .put("longitude", JSONObject.NULL)
-                    .put("lastUpdated", "2026-04-19T00:00:00Z")
+                    .putNullable("address", profile.address)
+                    .putNullable("displayAddress", profile.displayAddress ?: profile.address)
+                    .putNullable("city", profile.city)
+                    .putNullable("country", profile.country)
+                    .put(
+                        "administrative",
+                        JSONObject()
+                            .putNullable("countryCode", profile.countryCode)
+                            .putNullable("country", profile.country)
+                            .putNullable("city", profile.city)
+                            .putNullable("district", profile.district)
+                            .putNullable("neighborhood", profile.neighborhood)
+                            .putNullable("extraAddress", profile.extraAddress)
+                            .putNullable("postalCode", profile.postalCode)
+                    )
+                    .putNullable("placeId", profile.placeId)
+                    .putNullable("latitude", profile.latitude)
+                    .putNullable("longitude", profile.longitude)
+                    .put(
+                        "coordinate",
+                        if (profile.latitude == null || profile.longitude == null) {
+                            JSONObject.NULL
+                        } else {
+                            JSONObject()
+                                .put("latitude", profile.latitude)
+                                .put("longitude", profile.longitude)
+                                .put("accuracyMeters", JSONObject.NULL)
+                                .put("source", JSONObject.NULL)
+                                .put("capturedAt", profile.locationLastUpdated ?: "2026-04-19T00:00:00Z")
+                        }
+                    )
+                    .put("lastUpdated", profile.locationLastUpdated ?: "2026-04-19T00:00:00Z")
             )
             .put("expertise", expertiseArray)
     }
@@ -501,6 +716,349 @@ private fun JSONObject?.optDoubleOrNull(key: String): Double? {
     return optDouble(key)
 }
 
+private fun buildAdministrativeAddress(administrative: JSONObject?): String? {
+    if (administrative == null) {
+        return null
+    }
+
+    return listOf(
+        administrative.optStringOrNull("neighborhood"),
+        administrative.optStringOrNull("district"),
+        administrative.optStringOrNull("extraAddress")
+    )
+        .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+        .joinToString(", ")
+        .ifBlank { null }
+}
+
+private fun normalizeLocationPatch(
+    payload: JSONObject,
+    administrative: JSONObject?,
+    coordinate: JSONObject?
+): NormalizedLocationPatch {
+    val fallbackAddress = buildAdministrativeAddress(administrative)
+
+    val displayAddressValue = selectNullish(
+        payload.fieldOrMissing("displayAddress"),
+        payload.fieldOrMissing("address"),
+        fallbackAddress
+    )
+    val addressValue = selectNullish(
+        payload.fieldOrMissing("address"),
+        payload.fieldOrMissing("displayAddress"),
+        fallbackAddress
+    )
+    val cityValue = selectNullish(
+        payload.fieldOrMissing("city"),
+        administrative.fieldOrMissing("city")
+    )
+    val countryValue = selectNullish(
+        payload.fieldOrMissing("country"),
+        administrative.fieldOrMissing("country")
+    )
+    val countryCodeValue = administrative.fieldOrMissing("countryCode")
+    val districtValue = administrative.fieldOrMissing("district")
+    val neighborhoodValue = administrative.fieldOrMissing("neighborhood")
+    val extraAddressValue = administrative.fieldOrMissing("extraAddress")
+    val postalCodeValue = administrative.fieldOrMissing("postalCode")
+    val placeIdValue = payload.fieldOrMissing("placeId")
+    val latitudeValue = selectNullish(
+        payload.fieldOrMissing("latitude"),
+        coordinate.fieldOrMissing("latitude")
+    )
+    val longitudeValue = selectNullish(
+        payload.fieldOrMissing("longitude"),
+        coordinate.fieldOrMissing("longitude")
+    )
+
+    return NormalizedLocationPatch(
+        address = normalizeOptionalString(addressValue),
+        displayAddress = normalizeOptionalString(displayAddressValue),
+        city = normalizeOptionalString(cityValue),
+        country = normalizeOptionalString(countryValue),
+        countryCode = normalizeOptionalString(countryCodeValue, uppercase = true),
+        district = normalizeOptionalString(districtValue),
+        neighborhood = normalizeOptionalString(neighborhoodValue),
+        extraAddress = normalizeOptionalString(extraAddressValue),
+        postalCode = normalizeOptionalString(postalCodeValue),
+        placeId = normalizeOptionalString(placeIdValue),
+        latitude = normalizeOptionalDouble(latitudeValue),
+        longitude = normalizeOptionalDouble(longitudeValue)
+    )
+}
+
+private fun validateLocationPatchPayload(payload: JSONObject) {
+    val hasKnownField = jsonKeys(payload).any { LocationPatchAllowedKeys.contains(it) }
+    if (!hasKnownField) {
+        throw ApiException(
+            message = "At least one location field must be provided",
+            status = 400,
+            code = "VALIDATION_ERROR"
+        )
+    }
+
+    if (payload.has("administrative") && payload.optJSONObject("administrative") == null) {
+        throw ApiException(
+            message = "administrative must be an object",
+            status = 400,
+            code = "VALIDATION_ERROR"
+        )
+    }
+
+    if (payload.has("coordinate") && payload.optJSONObject("coordinate") == null) {
+        throw ApiException(
+            message = "coordinate must be an object",
+            status = 400,
+            code = "VALIDATION_ERROR"
+        )
+    }
+
+    val administrative = payload.optJSONObject("administrative")
+    val coordinate = payload.optJSONObject("coordinate")
+
+    validateFlatCoordinatePair(payload)
+    validateFlatCoordinateRanges(payload)
+    validateLocationStringFields(payload)
+    validateCoordinateObject(payload, coordinate)
+    validateAdministrativeObject(administrative)
+}
+
+private fun validateFlatCoordinatePair(payload: JSONObject) {
+    val latitudeProvided = payload.has("latitude")
+    val longitudeProvided = payload.has("longitude")
+    if (latitudeProvided != longitudeProvided) {
+        throw ApiException(
+            message = "latitude and longitude must be provided together",
+            status = 400,
+            code = "VALIDATION_ERROR"
+        )
+    }
+}
+
+private fun validateFlatCoordinateRanges(payload: JSONObject) {
+    if (payload.has("latitude") && !payload.isNull("latitude")) {
+        val latitude = payload.opt("latitude")
+        if (latitude !is Number || latitude.toDouble() !in -90.0..90.0) {
+            throw ApiException(
+                message = "latitude must be between -90 and 90",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+
+    if (payload.has("longitude") && !payload.isNull("longitude")) {
+        val longitude = payload.opt("longitude")
+        if (longitude !is Number || longitude.toDouble() !in -180.0..180.0) {
+            throw ApiException(
+                message = "longitude must be between -180 and 180",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+}
+
+private fun validateLocationStringFields(payload: JSONObject) {
+    for (field in listOf("address", "city", "country", "displayAddress", "placeId")) {
+        if (payload.has(field) && !payload.isNull(field) && payload.opt(field) !is String) {
+            throw ApiException(
+                message = "$field must be a string or null",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+}
+
+private fun validateCoordinateObject(payload: JSONObject, coordinate: JSONObject?) {
+    if (coordinate == null) {
+        return
+    }
+
+    val coordinateHasLatitude = coordinate.has("latitude")
+    val coordinateHasLongitude = coordinate.has("longitude")
+    if (coordinateHasLatitude != coordinateHasLongitude) {
+        throw ApiException(
+            message = "coordinate.latitude and coordinate.longitude must be provided together",
+            status = 400,
+            code = "VALIDATION_ERROR"
+        )
+    }
+
+    if (coordinateHasLatitude && !coordinate.isNull("latitude")) {
+        val latitude = coordinate.opt("latitude")
+        if (latitude !is Number || latitude.toDouble() !in -90.0..90.0) {
+            throw ApiException(
+                message = "coordinate.latitude must be between -90 and 90",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+
+    if (coordinateHasLongitude && !coordinate.isNull("longitude")) {
+        val longitude = coordinate.opt("longitude")
+        if (longitude !is Number || longitude.toDouble() !in -180.0..180.0) {
+            throw ApiException(
+                message = "coordinate.longitude must be between -180 and 180",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+
+    if (coordinate.has("accuracyMeters") && !coordinate.isNull("accuracyMeters")) {
+        val accuracyMeters = coordinate.opt("accuracyMeters")
+        if (accuracyMeters !is Number || accuracyMeters.toDouble() < 0.0) {
+            throw ApiException(
+                message = "coordinate.accuracyMeters must be a number >= 0",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+
+    if (coordinate.has("source") && !coordinate.isNull("source") && coordinate.opt("source") !is String) {
+        throw ApiException(
+            message = "coordinate.source must be a string or null",
+            status = 400,
+            code = "VALIDATION_ERROR"
+        )
+    }
+
+    if (coordinate.has("capturedAt") && !coordinate.isNull("capturedAt") && coordinate.opt("capturedAt") !is String) {
+        throw ApiException(
+            message = "coordinate.capturedAt must be a string or null",
+            status = 400,
+            code = "VALIDATION_ERROR"
+        )
+    }
+
+    if (
+        payload.has("latitude") &&
+            coordinate.has("latitude") &&
+            !payload.isNull("latitude") &&
+            !coordinate.isNull("latitude")
+    ) {
+        val latitude = payload.opt("latitude") as? Number
+        val coordinateLatitude = coordinate.opt("latitude") as? Number
+        if (latitude != null && coordinateLatitude != null && latitude.toDouble() != coordinateLatitude.toDouble()) {
+            throw ApiException(
+                message = "latitude conflicts with coordinate.latitude",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+
+    if (
+        payload.has("longitude") &&
+            coordinate.has("longitude") &&
+            !payload.isNull("longitude") &&
+            !coordinate.isNull("longitude")
+    ) {
+        val longitude = payload.opt("longitude") as? Number
+        val coordinateLongitude = coordinate.opt("longitude") as? Number
+        if (longitude != null && coordinateLongitude != null && longitude.toDouble() != coordinateLongitude.toDouble()) {
+            throw ApiException(
+                message = "longitude conflicts with coordinate.longitude",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+}
+
+private fun validateAdministrativeObject(administrative: JSONObject?) {
+    if (administrative == null) {
+        return
+    }
+
+    for (field in listOf("countryCode", "country", "city", "district", "neighborhood", "extraAddress", "postalCode")) {
+        if (administrative.has(field) && !administrative.isNull(field) && administrative.opt(field) !is String) {
+            throw ApiException(
+                message = "administrative.$field must be a string or null",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+
+    if (administrative.has("countryCode") && !administrative.isNull("countryCode")) {
+        val rawCountryCode = administrative.optString("countryCode").trim()
+        if (!IsoAlpha2CountryCodePattern.matches(rawCountryCode)) {
+            throw ApiException(
+                message = "administrative.countryCode must be a 2-letter ISO code",
+                status = 400,
+                code = "VALIDATION_ERROR"
+            )
+        }
+    }
+}
+
+private fun jsonKeys(json: JSONObject): List<String> {
+    val iterator = json.keys()
+    val keys = mutableListOf<String>()
+    while (iterator.hasNext()) {
+        keys.add(iterator.next())
+    }
+    return keys
+}
+
+private fun JSONObject?.hasOwn(key: String): Boolean {
+    return this != null && has(key)
+}
+
+private fun JSONObject?.fieldOrMissing(key: String): Any? {
+    if (this == null || !has(key)) {
+        return MissingJsonField
+    }
+
+    return if (isNull(key)) null else opt(key)
+}
+
+private fun selectNullish(vararg values: Any?): Any? {
+    for (value in values) {
+        if (value === MissingJsonField || value == null || value == JSONObject.NULL) {
+            continue
+        }
+
+        return value
+    }
+
+    return null
+}
+
+private fun normalizeOptionalString(value: Any?, uppercase: Boolean = false): String? {
+    if (value !is String) {
+        return null
+    }
+
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) {
+        return null
+    }
+
+    return if (uppercase) {
+        trimmed.uppercase(Locale.ROOT)
+    } else {
+        trimmed
+    }
+}
+
+private fun normalizeOptionalDouble(value: Any?): Double? {
+    return when (value) {
+        is Number -> value.toDouble()
+        is String -> value.trim().toDoubleOrNull()
+        else -> null
+    }
+}
+
 private fun JSONObject.putNullable(key: String, value: String?): JSONObject {
+    return put(key, value ?: JSONObject.NULL)
+}
+
+private fun JSONObject.putNullable(key: String, value: Double?): JSONObject {
     return put(key, value ?: JSONObject.NULL)
 }
