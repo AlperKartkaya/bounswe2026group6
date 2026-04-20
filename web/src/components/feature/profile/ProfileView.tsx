@@ -12,10 +12,20 @@ import { ToggleSwitch } from "@/components/ui/selection/ToggleSwitch";
 import { Checkbox } from "@/components/ui/selection/Checkbox";
 import { PrimaryButton } from "@/components/ui/buttons/PrimaryButton";
 import { HelperText } from "@/components/ui/display/HelperText";
+import { LocationPicker, LocationPickerValue } from "@/components/feature/location";
 import { bloodTypeOptions } from "@/lib/bloodTypes";
 import { expertiseOptions, professionOptions } from "@/lib/profileOptions";
 import { clearAccessToken, fetchCurrentUser, getAccessToken } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
+import { fetchLocationTree } from "@/lib/location";
+import {
+    findCityKeyByLabel,
+    findCountryKeyByLabel,
+    findDistrictKeyByLabel,
+    findNeighborhoodValueByLabel,
+    LocationTreeByCountry,
+    parseLocationAddress,
+} from "@/lib/locationTree";
 import {
     BackendProfileResponse,
     EditableProfileData,
@@ -31,12 +41,6 @@ import {
     validateExpertiseAreas,
     putMyExpertiseAreas,
 } from "@/lib/profile";
-
-type Neighborhood = { label: string; value: string };
-type District = { label: string; neighborhoods: Neighborhood[] };
-type City = { label: string; districts: Record<string, District> };
-type Country = { label: string; cities: Record<string, City> };
-type LocationData = Record<string, Country>;
 type UploadedFile = { name: string; data: string };
 type UploadField = "chronicDiseasesFiles" | "allergiesFiles";
 type EmptyStateAction = "login" | "complete-profile" | null;
@@ -48,150 +52,28 @@ type ProfileData = EditableProfileData & {
     allergiesVerified: boolean;
 };
 
-const locationData: LocationData = {
-    tr: {
-        label: "Turkey",
-        cities: {
-            istanbul: {
-                label: "Istanbul",
-                districts: {
-                    kadikoy: {
-                        label: "Kadıköy",
-                        neighborhoods: [
-                            { label: "Bostancı", value: "bostanci" },
-                            { label: "Erenköy", value: "erenkoy" },
-                        ],
-                    },
-                    besiktas: {
-                        label: "Beşiktaş",
-                        neighborhoods: [
-                            { label: "Balmumcu", value: "balmumcu" },
-                            { label: "Kuruçeşme", value: "kurucesme" },
-                        ],
-                    },
-                },
-            },
-            ankara: {
-                label: "Ankara",
-                districts: {
-                    cankaya: {
-                        label: "Çankaya",
-                        neighborhoods: [{ label: "Anıttepe", value: "anittepe" }],
-                    },
-                },
-            },
-        },
-    },
-};
-
-function findCountryKeyByLabel(label: string) {
-    return (
-        Object.entries(locationData).find(([, country]) => country.label === label)?.[0] ||
-        ""
-    );
-}
-
-function findCityKeyByLabel(countryKey: string, label: string) {
-    const country = locationData[countryKey];
-
-    if (!country) {
-        return "";
-    }
-
-    return (
-        Object.entries(country.cities).find(([, city]) => city.label === label)?.[0] ||
-        ""
-    );
-}
-
-function normalizeAddressPart(value: string) {
-    return value
-        .toLocaleLowerCase("tr")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim();
-}
-
-function parseLocationAddress(countryKey: string, cityKey: string, address: string) {
-    const tokens = address
-        .split(",")
-        .map((part) => part.trim())
-        .filter(Boolean);
-
-    if (!countryKey || !cityKey || tokens.length === 0) {
-        return {
-            district: "",
-            neighborhood: "",
-            extraAddress: address,
-        };
-    }
-
-    const city = locationData[countryKey]?.cities[cityKey];
-    if (!city) {
-        return {
-            district: "",
-            neighborhood: "",
-            extraAddress: address,
-        };
-    }
-
-    const remainingTokens = new Map(
-        tokens.map((token) => [normalizeAddressPart(token), token])
-    );
-
-    let district = "";
-    let neighborhood = "";
-
-    for (const [districtKey, districtValue] of Object.entries(city.districts)) {
-        const matchedDistrict = [districtKey, districtValue.label]
-            .map(normalizeAddressPart)
-            .find((candidate) => remainingTokens.has(candidate));
-
-        if (!matchedDistrict) {
-            continue;
-        }
-
-        district = districtKey;
-        remainingTokens.delete(matchedDistrict);
-
-        const matchedNeighborhood = districtValue.neighborhoods.find((item) =>
-            [item.value, item.label]
-                .map(normalizeAddressPart)
-                .some((candidate) => remainingTokens.has(candidate))
-        );
-
-        if (matchedNeighborhood) {
-            neighborhood = matchedNeighborhood.value;
-            for (const candidate of [matchedNeighborhood.value, matchedNeighborhood.label].map(
-                normalizeAddressPart
-            )) {
-                remainingTokens.delete(candidate);
-            }
-        }
-
-        break;
-    }
-
-    return {
-        district,
-        neighborhood,
-        extraAddress: Array.from(remainingTokens.values()).join(", "),
-    };
-}
 
 function toProfileData(
     backendProfile: BackendProfileResponse,
-    email: string
+    email: string,
+    locationTree: LocationTreeByCountry
 ): ProfileData {
     const mapped = mapBackendProfileToEditableProfile(backendProfile, email);
-    const countryKey = findCountryKeyByLabel(mapped.country);
-    const cityKey = countryKey ? findCityKeyByLabel(countryKey, mapped.city) : "";
-    const parsedAddress = parseLocationAddress(countryKey, cityKey, mapped.extraAddress);
+    const countryKey = findCountryKeyByLabel(locationTree, mapped.country);
+    const cityKey = countryKey
+        ? findCityKeyByLabel(locationTree, countryKey, mapped.city)
+        : "";
+    const parsedAddress = parseLocationAddress(
+        locationTree,
+        countryKey,
+        cityKey,
+        mapped.extraAddress
+    );
 
     return {
         ...mapped,
-        country: countryKey,
-        city: cityKey,
+        country: countryKey || mapped.country,
+        city: cityKey || mapped.city,
         district: parsedAddress.district,
         neighborhood: parsedAddress.neighborhood,
         extraAddress: parsedAddress.extraAddress,
@@ -205,6 +87,10 @@ function toProfileData(
 export default function ProfileView() {
     const router = useRouter();
     const [profile, setProfile] = React.useState<ProfileData | null>(null);
+    const [locationTree, setLocationTree] = React.useState<LocationTreeByCountry>({});
+    const [locationTreeError, setLocationTreeError] = React.useState("");
+    const [locationPickerValue, setLocationPickerValue] =
+        React.useState<LocationPickerValue | null>(null);
     const [uploading, setUploading] = React.useState<string | null>(null);
     const [progress] = React.useState<number>(100);
     const [loading, setLoading] = React.useState(true);
@@ -215,14 +101,43 @@ export default function ProfileView() {
         React.useState<EmptyStateAction>(null);
 
     const refreshProfileFromBackend = React.useCallback(
-        async (token: string) => {
+        async (token: string, activeLocationTree: LocationTreeByCountry) => {
             const [user, backendProfile] = await Promise.all([
                 fetchCurrentUser(token),
                 fetchMyProfile(token),
             ]);
 
             setProfile((currentProfile) => {
-                const refreshedProfile = toProfileData(backendProfile, user.email);
+                const refreshedProfile = toProfileData(
+                    backendProfile,
+                    user.email,
+                    activeLocationTree
+                );
+
+                if (
+                    backendProfile.locationProfile.latitude !== null &&
+                    backendProfile.locationProfile.longitude !== null
+                ) {
+                    setLocationPickerValue({
+                        placeId: "profile:location",
+                        displayName:
+                            [
+                                backendProfile.locationProfile.city,
+                                backendProfile.locationProfile.country,
+                            ]
+                                .filter(Boolean)
+                                .join(", ") || "Current profile location",
+                        latitude: backendProfile.locationProfile.latitude,
+                        longitude: backendProfile.locationProfile.longitude,
+                        administrative: {
+                            country: backendProfile.locationProfile.country,
+                            city: backendProfile.locationProfile.city,
+                            district: refreshedProfile.district,
+                            neighborhood: refreshedProfile.neighborhood,
+                            extraAddress: refreshedProfile.extraAddress,
+                        },
+                    });
+                }
 
                 return currentProfile
                     ? {
@@ -256,8 +171,56 @@ export default function ProfileView() {
                     fetchMyProfile(token),
                 ]);
 
-                setProfile(toProfileData(backendProfile, user.email));
+                const mappedProfile = toProfileData(
+                    backendProfile,
+                    user.email,
+                    {}
+                );
+
+                setProfile(mappedProfile);
+                if (
+                    backendProfile.locationProfile.latitude !== null &&
+                    backendProfile.locationProfile.longitude !== null
+                ) {
+                    setLocationPickerValue({
+                        placeId: "profile:location",
+                        displayName:
+                            [
+                                backendProfile.locationProfile.city,
+                                backendProfile.locationProfile.country,
+                            ]
+                                .filter(Boolean)
+                                .join(", ") || "Current profile location",
+                        latitude: backendProfile.locationProfile.latitude,
+                        longitude: backendProfile.locationProfile.longitude,
+                        administrative: {
+                            country: backendProfile.locationProfile.country,
+                            city: backendProfile.locationProfile.city,
+                            district: mappedProfile.district,
+                            neighborhood: mappedProfile.neighborhood,
+                            extraAddress: mappedProfile.extraAddress,
+                        },
+                    });
+                }
+
                 setEmptyStateAction(null);
+
+                void (async () => {
+                    try {
+                        const treeResponse = await fetchLocationTree("TR");
+                        setLocationTree({
+                            [treeResponse.countryCode.toLowerCase()]: treeResponse.tree,
+                        });
+                        setLocationTreeError("");
+                    } catch (treeError) {
+                        setLocationTree({});
+                        setLocationTreeError(
+                            treeError instanceof Error
+                                ? treeError.message
+                                : "Could not load location tree."
+                        );
+                    }
+                })();
             } catch (err) {
                 if (err instanceof ApiError && err.status === 401) {
                     clearAccessToken();
@@ -281,7 +244,53 @@ export default function ProfileView() {
         }
 
         void loadProfile();
-    }, [refreshProfileFromBackend]);
+    }, []);
+
+    React.useEffect(() => {
+        if (!locationPickerValue) {
+            return;
+        }
+
+        const countryKey = findCountryKeyByLabel(
+            locationTree,
+            locationPickerValue.administrative.country || ""
+        );
+        const cityKey = findCityKeyByLabel(
+            locationTree,
+            countryKey,
+            locationPickerValue.administrative.city || ""
+        );
+        const districtKey = findDistrictKeyByLabel(
+            locationTree,
+            countryKey,
+            cityKey,
+            locationPickerValue.administrative.district || ""
+        );
+        const neighborhoods =
+            locationTree[countryKey]?.cities[cityKey]?.districts[districtKey]?.neighborhoods ||
+            [];
+        const neighborhoodValue = findNeighborhoodValueByLabel(
+            neighborhoods,
+            locationPickerValue.administrative.neighborhood || ""
+        );
+
+        setProfile((currentProfile) => {
+            if (!currentProfile) {
+                return currentProfile;
+            }
+
+            return {
+                ...currentProfile,
+                country: countryKey || currentProfile.country,
+                city: cityKey || currentProfile.city,
+                district: districtKey || currentProfile.district,
+                neighborhood: neighborhoodValue || currentProfile.neighborhood,
+                extraAddress:
+                    locationPickerValue.administrative.extraAddress ||
+                    currentProfile.extraAddress,
+            };
+        });
+    }, [locationPickerValue, locationTree]);
 
     const handleSave = async () => {
         if (!profile) {
@@ -309,14 +318,30 @@ export default function ProfileView() {
             setError("");
             setInfo("");
 
+            const saveCountryKey = findCountryKeyByLabel(locationTree, profile.country);
+            const saveCityKey = findCityKeyByLabel(
+                locationTree,
+                saveCountryKey,
+                profile.city
+            );
+            const saveDistrictKey = findDistrictKeyByLabel(
+                locationTree,
+                saveCountryKey,
+                saveCityKey,
+                profile.district
+            );
+
+            const countryData = saveCountryKey ? locationTree[saveCountryKey] : undefined;
             const districtLabel =
-                locationData[profile.country]?.cities[profile.city]?.districts[profile.district]
-                    ?.label || profile.district;
+                countryData?.cities[saveCityKey]?.districts[saveDistrictKey]?.label ||
+                locationPickerValue?.administrative.district ||
+                profile.district;
             const neighborhoodLabel =
-                locationData[profile.country]?.cities[profile.city]?.districts[
-                    profile.district
-                ]?.neighborhoods.find((item) => item.value === profile.neighborhood)
-                    ?.label || profile.neighborhood;
+                countryData?.cities[saveCityKey]?.districts[saveDistrictKey]?.neighborhoods.find(
+                    (item) => item.value === profile.neighborhood
+                )?.label ||
+                locationPickerValue?.administrative.neighborhood ||
+                profile.neighborhood;
 
             await patchMyPhysical(token, {
                 age: profile.age ? Number(profile.age) : undefined,
@@ -333,16 +358,24 @@ export default function ProfileView() {
             });
 
             await patchMyLocation(token, {
-                country: locationData[profile.country]?.label || profile.country || null,
+                country:
+                    countryData?.label ||
+                    locationPickerValue?.administrative.country ||
+                    profile.country ||
+                    null,
                 city:
-                    locationData[profile.country]?.cities[profile.city]?.label ||
+                    countryData?.cities[saveCityKey]?.label ||
+                    locationPickerValue?.administrative.city ||
                     profile.city ||
                     null,
                 address:
                     buildAddress({
                         district: districtLabel,
                         neighborhood: neighborhoodLabel,
-                        extraAddress: profile.extraAddress,
+                        extraAddress:
+                            profile.extraAddress ||
+                            locationPickerValue?.administrative.extraAddress ||
+                            "",
                     }) || null,
             });
 
@@ -358,12 +391,12 @@ export default function ProfileView() {
                 expertiseAreas,
             });
 
-            await refreshProfileFromBackend(token);
+            await refreshProfileFromBackend(token, locationTree);
 
             setInfo("Profile updated successfully.");
         } catch (err) {
             try {
-                await refreshProfileFromBackend(token);
+                await refreshProfileFromBackend(token, locationTree);
             } catch {
             }
 
@@ -458,9 +491,22 @@ export default function ProfileView() {
         );
     }
 
-    const countryData = profile.country ? locationData[profile.country] : undefined;
+    const resolvedCountryKey = findCountryKeyByLabel(locationTree, profile.country);
+    const resolvedCityKey = findCityKeyByLabel(
+        locationTree,
+        resolvedCountryKey,
+        profile.city
+    );
+    const resolvedDistrictKey = findDistrictKeyByLabel(
+        locationTree,
+        resolvedCountryKey,
+        resolvedCityKey,
+        profile.district
+    );
 
-    const countryOptions = Object.entries(locationData).map(([key, value]) => ({
+    const countryData = resolvedCountryKey ? locationTree[resolvedCountryKey] : undefined;
+
+    const countryOptions = Object.entries(locationTree).map(([key, value]) => ({
         label: value.label,
         value: key,
     }));
@@ -473,8 +519,8 @@ export default function ProfileView() {
         : [];
 
     const districtOptions =
-        profile.city && countryData?.cities[profile.city]
-            ? Object.entries(countryData.cities[profile.city].districts).map(
+        resolvedCityKey && countryData?.cities[resolvedCityKey]
+            ? Object.entries(countryData.cities[resolvedCityKey].districts).map(
                 ([key, value]) => ({
                     label: value.label,
                     value: key,
@@ -483,11 +529,16 @@ export default function ProfileView() {
             : [];
 
     const neighborhoodOptions =
-        profile.city &&
-            profile.district &&
-            countryData?.cities[profile.city]?.districts[profile.district]
-            ? countryData.cities[profile.city].districts[profile.district].neighborhoods
+        resolvedCityKey &&
+            resolvedDistrictKey &&
+            countryData?.cities[resolvedCityKey]?.districts[resolvedDistrictKey]
+            ? countryData.cities[resolvedCityKey].districts[resolvedDistrictKey].neighborhoods
             : [];
+
+    const resolvedNeighborhoodValue = findNeighborhoodValueByLabel(
+        neighborhoodOptions,
+        profile.neighborhood
+    );
 
     return (
         <div className="flex gap-10">
@@ -786,11 +837,19 @@ export default function ProfileView() {
                         Your location may help emergency services reach you faster.
                     </p>
 
+                    <div className="mb-4">
+                        <LocationPicker
+                            value={locationPickerValue}
+                            onChange={setLocationPickerValue}
+                            label="Select location from map or search"
+                        />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                         <SelectInput
                             id="country"
                             label="Country"
-                            value={profile.country}
+                            value={resolvedCountryKey}
                             options={[{ label: "Select Country", value: "" }, ...countryOptions]}
                             onChange={(e) =>
                                 setProfile({
@@ -806,8 +865,8 @@ export default function ProfileView() {
                         <SelectInput
                             id="city"
                             label="City"
-                            value={profile.city}
-                            disabled={!profile.country}
+                            value={resolvedCityKey}
+                            disabled={!resolvedCountryKey}
                             options={[{ label: "Select City", value: "" }, ...cityOptions]}
                             onChange={(e) =>
                                 setProfile({
@@ -822,8 +881,8 @@ export default function ProfileView() {
                         <SelectInput
                             id="district"
                             label="District"
-                            value={profile.district}
-                            disabled={!profile.city}
+                            value={resolvedDistrictKey}
+                            disabled={!resolvedCityKey}
                             options={[
                                 { label: "Select District", value: "" },
                                 ...districtOptions,
@@ -840,8 +899,8 @@ export default function ProfileView() {
                         <SelectInput
                             id="neighborhood"
                             label="Neighborhood"
-                            value={profile.neighborhood}
-                            disabled={!profile.district}
+                            value={resolvedNeighborhoodValue}
+                            disabled={!resolvedDistrictKey}
                             options={[
                                 { label: "Select Neighborhood", value: "" },
                                 ...neighborhoodOptions,
@@ -867,9 +926,14 @@ export default function ProfileView() {
                                 }
                             />
                             <HelperText>
-                                District and neighborhood are flattened into a single backend
-                                address field for now.
+                                District and neighborhood are sent with their labels and
+                                merged into the backend address field for compatibility.
                             </HelperText>
+                            {locationTreeError ? (
+                                <HelperText className="text-red-500">
+                                    {locationTreeError}
+                                </HelperText>
+                            ) : null}
                         </div>
                     </div>
 
