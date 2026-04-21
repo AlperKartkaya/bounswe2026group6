@@ -4,17 +4,18 @@ const express = require('express');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { query } = require('../../../../src/db/pool');
+const { apiRouter } = require('../../../../src/routes');
 
 jest.mock('uuid', () => ({
   v4: () => require('crypto').randomBytes(16).toString('hex'),
 }));
 
-const { adminRouter } = require('../../../../src/modules/admin/routes');
+jest.mock('express-rate-limit', () => () => (_req, _res, next) => next());
 
 function createTestApp() {
   const app = express();
   app.use(express.json());
-  app.use('/api/admin', adminRouter);
+  app.use('/api', apiRouter);
   return app;
 }
 
@@ -69,6 +70,7 @@ async function seedHelpRequests() {
         status,
         created_at,
         resolved_at,
+        cancelled_at,
         is_saved_locally
       )
       VALUES
@@ -89,6 +91,7 @@ async function seedHelpRequests() {
           'PENDING',
           NOW() - INTERVAL '1 hour',
           NULL,
+          NULL,
           FALSE
         ),
         (
@@ -107,6 +110,7 @@ async function seedHelpRequests() {
           TRUE,
           'IN_PROGRESS',
           NOW() - INTERVAL '2 days',
+          NULL,
           NULL,
           FALSE
         ),
@@ -127,6 +131,7 @@ async function seedHelpRequests() {
           'RESOLVED',
           NOW() - INTERVAL '3 days',
           NOW() - INTERVAL '2 hours',
+          NULL,
           FALSE
         ),
         (
@@ -146,6 +151,7 @@ async function seedHelpRequests() {
           'CANCELLED',
           NOW() - INTERVAL '10 days',
           NULL,
+          NOW() - INTERVAL '2 hours',
           FALSE
         )
     `,
@@ -217,7 +223,7 @@ describe('GET /api/admin/emergency-overview', () => {
     expect(response.body.code).toBe('FORBIDDEN');
   });
 
-  test('returns aggregate emergency overview for admin users', async () => {
+  test('returns overview without regionSummary by default', async () => {
     await seedBaseUsers();
     await seedHelpRequests();
 
@@ -251,8 +257,23 @@ describe('GET /api/admin/emergency-overview', () => {
     expect(response.body.overview.recentActivity.createdLast7Days).toBe(3);
     expect(response.body.overview.recentActivity.resolvedLast24Hours).toBe(1);
     expect(response.body.overview.recentActivity.resolvedLast7Days).toBe(1);
-    expect(response.body.overview.recentActivity.cancelledLast24Hours).toBe(0);
-    expect(response.body.overview.recentActivity.cancelledLast7Days).toBe(0);
+    expect(response.body.overview.recentActivity.cancelledLast24Hours).toBe(1);
+    expect(response.body.overview.recentActivity.cancelledLast7Days).toBe(1);
+    expect(response.body.overview.regionSummary).toBeUndefined();
+  });
+
+  test('returns regionSummary when includeRegionSummary=true', async () => {
+    await seedBaseUsers();
+    await seedHelpRequests();
+
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .get('/api/admin/emergency-overview?includeRegionSummary=true')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
     expect(response.body.overview.regionSummary).toEqual([
       {
         city: 'ankara',
@@ -282,5 +303,21 @@ describe('GET /api/admin/emergency-overview', () => {
         cancelled: 1,
       },
     ]);
+  });
+
+  test('keeps backward-compatible legacy route under /api/auth/admin', async () => {
+    await seedBaseUsers();
+    await seedHelpRequests();
+
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .get('/api/auth/admin/emergency-overview?includeRegionSummary=true')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.overview).toBeTruthy();
+    expect(response.body.overview.regionSummary).toEqual(expect.any(Array));
   });
 });

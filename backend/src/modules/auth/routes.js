@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { adminRouter } = require('../admin/routes');
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -34,6 +35,9 @@ authRouter.post('/forgot-password', authLimiter, forgotPassword);
 authRouter.post('/reset-password', authLimiter, resetPasswordHandler);
 authRouter.post('/logout', requireAuth, logout);
 authRouter.get('/me', requireAuth, getMe);
+
+// Backward-compatibility alias for legacy admin paths under /api/auth/admin/*
+authRouter.use('/admin', adminRouter);
 
 module.exports = {
   authRouter,

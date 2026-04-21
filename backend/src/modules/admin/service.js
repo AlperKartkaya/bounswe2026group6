@@ -22,8 +22,8 @@ async function getStatsForAdmin() {
   return getBasicStats();
 }
 
-async function getEmergencyOverviewForAdmin() {
-  return getEmergencyOverview();
+async function getEmergencyOverviewForAdmin(options = {}) {
+  return getEmergencyOverview(options);
 }
 
 module.exports = {

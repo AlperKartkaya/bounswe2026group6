@@ -58,9 +58,12 @@ async function getAdminStats(_req, res) {
   }
 }
 
-async function getAdminEmergencyOverview(_req, res) {
+async function getAdminEmergencyOverview(req, res) {
   try {
-    const overview = await getEmergencyOverviewForAdmin();
+    const includeRegionSummary = ['1', 'true', 'yes', 'on'].includes(
+      String(req.query?.includeRegionSummary || '').toLowerCase(),
+    );
+    const overview = await getEmergencyOverviewForAdmin({ includeRegionSummary });
 
     return res.status(200).json({ overview });
   } catch (_error) {

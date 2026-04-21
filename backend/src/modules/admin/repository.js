@@ -78,8 +78,8 @@ async function getBasicStats() {
   };
 }
 
-async function getEmergencyOverview() {
-  const [statusResult, urgencyResult, recentActivityResult, regionResult] = await Promise.all([
+async function getEmergencyOverview({ includeRegionSummary = false } = {}) {
+  const overviewQueries = [
     query(
       `
         SELECT
@@ -123,40 +123,53 @@ async function getEmergencyOverview() {
             AND resolved_at >= NOW() - INTERVAL '7 days'
           )::int AS resolved_last_7d,
           COUNT(*) FILTER (
-            WHERE status = 'CANCELLED'
-            AND created_at >= NOW() - INTERVAL '24 hours'
+            WHERE cancelled_at IS NOT NULL
+            AND cancelled_at >= NOW() - INTERVAL '24 hours'
           )::int AS cancelled_last_24h,
           COUNT(*) FILTER (
-            WHERE status = 'CANCELLED'
-            AND created_at >= NOW() - INTERVAL '7 days'
+            WHERE cancelled_at IS NOT NULL
+            AND cancelled_at >= NOW() - INTERVAL '7 days'
           )::int AS cancelled_last_7d
         FROM help_requests
       `,
     ),
-    query(
-      `
-        SELECT
-          COALESCE(NULLIF(TRIM(rl.city), ''), 'unknown') AS city,
-          COUNT(*)::int AS total_count,
-          COUNT(*) FILTER (WHERE hr.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS'))::int AS active_count,
-          COUNT(*) FILTER (WHERE hr.status = 'PENDING')::int AS pending_count,
-          COUNT(*) FILTER (WHERE hr.status IN ('ASSIGNED', 'IN_PROGRESS'))::int AS in_progress_count,
-          COUNT(*) FILTER (WHERE hr.status = 'RESOLVED')::int AS resolved_count,
-          COUNT(*) FILTER (WHERE hr.status = 'CANCELLED')::int AS cancelled_count
-        FROM help_requests hr
-        LEFT JOIN request_locations rl ON rl.request_id = hr.request_id
-        GROUP BY city
-        ORDER BY total_count DESC, city ASC
-        LIMIT 10
-      `,
-    ),
-  ]);
+  ];
+
+  if (includeRegionSummary) {
+    overviewQueries.push(
+      query(
+        `
+          SELECT
+            COALESCE(NULLIF(TRIM(rl.city), ''), 'unknown') AS city,
+            COUNT(*)::int AS total_count,
+            COUNT(*) FILTER (WHERE hr.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS'))::int AS active_count,
+            COUNT(*) FILTER (WHERE hr.status = 'PENDING')::int AS pending_count,
+            COUNT(*) FILTER (WHERE hr.status IN ('ASSIGNED', 'IN_PROGRESS'))::int AS in_progress_count,
+            COUNT(*) FILTER (WHERE hr.status = 'RESOLVED')::int AS resolved_count,
+            COUNT(*) FILTER (WHERE hr.status = 'CANCELLED')::int AS cancelled_count
+          FROM help_requests hr
+          LEFT JOIN LATERAL (
+            SELECT city
+            FROM request_locations loc
+            WHERE loc.request_id = hr.request_id
+            ORDER BY loc.captured_at DESC, loc.location_id DESC
+            LIMIT 1
+          ) rl ON TRUE
+          GROUP BY city
+          ORDER BY total_count DESC, city ASC
+          LIMIT 10
+        `,
+      ),
+    );
+  }
+
+  const [statusResult, urgencyResult, recentActivityResult, regionResult] = await Promise.all(overviewQueries);
 
   const status = statusResult.rows[0];
   const urgency = urgencyResult.rows[0];
   const recent = recentActivityResult.rows[0];
 
-  return {
+  const overview = {
     totals: {
       totalEmergencies: status.total_count,
       activeEmergencies: status.active_count,
@@ -182,7 +195,10 @@ async function getEmergencyOverview() {
       cancelledLast24Hours: recent.cancelled_last_24h,
       cancelledLast7Days: recent.cancelled_last_7d,
     },
-    regionSummary: regionResult.rows.map((row) => ({
+  };
+
+  if (includeRegionSummary) {
+    overview.regionSummary = regionResult.rows.map((row) => ({
       city: row.city,
       total: row.total_count,
       active: row.active_count,
@@ -190,8 +206,10 @@ async function getEmergencyOverview() {
       inProgress: row.in_progress_count,
       resolved: row.resolved_count,
       cancelled: row.cancelled_count,
-    })),
-  };
+    }));
+  }
+
+  return overview;
 }
 
 module.exports = {

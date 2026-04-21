@@ -62,9 +62,10 @@ describe('admin service', () => {
   test('getEmergencyOverviewForAdmin delegates to repository', async () => {
     getEmergencyOverview.mockResolvedValue({ totals: { totalEmergencies: 3 } });
 
-    const result = await getEmergencyOverviewForAdmin();
+    const result = await getEmergencyOverviewForAdmin({ includeRegionSummary: true });
 
     expect(getEmergencyOverview).toHaveBeenCalledTimes(1);
+    expect(getEmergencyOverview).toHaveBeenCalledWith({ includeRegionSummary: true });
     expect(result).toEqual({ totals: { totalEmergencies: 3 } });
   });
 });
