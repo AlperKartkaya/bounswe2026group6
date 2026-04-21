@@ -26,6 +26,7 @@ import android.widget.Toast
 import com.neph.core.network.ApiException
 import com.neph.features.auth.util.countryCodeOptions
 import com.neph.features.profile.data.CurrentLocationShareWarning
+import com.neph.features.profile.data.CurrentDeviceLocation
 import com.neph.features.profile.data.DeviceLocationProvider
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.LocationData
@@ -50,6 +51,8 @@ import com.neph.ui.components.inputs.AppTextField
 import com.neph.ui.components.selection.AppCheckbox
 import com.neph.ui.components.selection.AppToggleSwitch
 import com.neph.ui.layout.AuthScaffold
+import com.neph.ui.map.NephMapIntegration
+import com.neph.ui.map.buildLocationSelectionMapQuery
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -90,6 +93,7 @@ fun CompleteProfileScreen(
     var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
     var locationLoading by remember { mutableStateOf(true) }
     var locationInfo by rememberSaveable { mutableStateOf("") }
+    var lastSharedLocation by remember { mutableStateOf<CurrentDeviceLocation?>(null) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -189,6 +193,10 @@ fun CompleteProfileScreen(
                     CurrentLocationShareWarning.PERMISSION_DENIED -> profileToSync.copy(shareLocation = false)
                     CurrentLocationShareWarning.LOCATION_UNAVAILABLE -> profileToSync
                     null -> profileToSync
+                }
+
+                if (locationShareAttempt.location != null) {
+                    lastSharedLocation = locationShareAttempt.location
                 }
 
                 ProfileRepository.syncProfile(
@@ -399,6 +407,66 @@ fun CompleteProfileScreen(
                 label = "Extra Address",
                 testTag = "complete_profile_extra_address"
             )
+
+            val selectedLocationQuery = buildLocationSelectionMapQuery(
+                countryKeyOrLabel = country,
+                cityKeyOrLabel = city,
+                districtKeyOrLabel = district,
+                neighborhoodValueOrLabel = neighborhood,
+                extraAddress = extraAddress,
+                locations = availableLocationData
+            )
+            if (selectedLocationQuery.isNotBlank()) {
+                Text(
+                    text = "Selected location can be opened in your map app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    com.neph.ui.components.buttons.TextActionButton(
+                        text = "Open Selected Location in Map",
+                        onClick = {
+                            val opened = NephMapIntegration.openLocationQuery(
+                                context = context,
+                                query = selectedLocationQuery
+                            )
+                            if (!opened) {
+                                info = "Could not open map application."
+                            }
+                        },
+                        enabled = !loading
+                    )
+                }
+            }
+
+            lastSharedLocation?.let { sharedLocation ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    com.neph.ui.components.buttons.TextActionButton(
+                        text = "Open Shared Coordinates in Map",
+                        onClick = {
+                            val opened = NephMapIntegration.openCoordinates(
+                                context = context,
+                                latitude = sharedLocation.latitude,
+                                longitude = sharedLocation.longitude,
+                                label = "Shared Current Location"
+                            )
+                            if (!opened) {
+                                info = "Could not open map application."
+                            }
+                        },
+                        enabled = !loading
+                    )
+                }
+            }
 
             AppToggleSwitch(
                 checked = shareLocation,
