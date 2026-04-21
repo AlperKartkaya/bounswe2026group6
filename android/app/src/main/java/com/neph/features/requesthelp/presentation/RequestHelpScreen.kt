@@ -323,37 +323,41 @@ internal fun resolveGuestLocationAutofillSelection(
         ?.takeIf { locations.containsKey(it) }
         .orEmpty()
     val countryFromLabel = findCountryKeyByLabel(reverseLocation.country, locations)
-    val country = countryFromCode.ifBlank {
-        countryFromLabel.ifBlank { currentCountry }
-    }
+    val mappedCountry = countryFromCode.ifBlank { countryFromLabel }
+    val country = currentCountry.ifBlank { mappedCountry }
 
-    val city = if (country.isNotBlank()) {
-        findCityKeyByLabel(country, reverseLocation.city, locations).ifBlank { currentCity }
+    val mappedCity = if (country.isNotBlank()) {
+        findCityKeyByLabel(country, reverseLocation.city, locations)
     } else {
-        currentCity
+        ""
     }
+    val city = currentCity.ifBlank { mappedCity }
 
-    val district = if (country.isNotBlank() && city.isNotBlank()) {
-        findDistrictKeyByLabel(country, city, reverseLocation.district, locations).ifBlank { currentDistrict }
+    val mappedDistrict = if (country.isNotBlank() && city.isNotBlank()) {
+        findDistrictKeyByLabel(country, city, reverseLocation.district, locations)
     } else {
-        currentDistrict
+        ""
     }
+    val district = currentDistrict.ifBlank { mappedDistrict }
 
-    val neighborhood = if (country.isNotBlank() && city.isNotBlank() && district.isNotBlank()) {
+    val mappedNeighborhood = if (country.isNotBlank() && city.isNotBlank() && district.isNotBlank()) {
         findNeighborhoodValueByLabel(
             country,
             city,
             district,
             reverseLocation.neighborhood,
             locations
-        ).ifBlank { currentNeighborhood }
+        )
     } else {
-        currentNeighborhood
+        ""
     }
+    val neighborhood = currentNeighborhood.ifBlank { mappedNeighborhood }
 
-    val shortAddress = reverseLocation.extraAddress
-        ?.takeIf { it.isNotBlank() }
-        ?: currentShortAddress
+    val shortAddress = currentShortAddress.ifBlank {
+        reverseLocation.extraAddress
+            ?.takeIf { it.isNotBlank() }
+            .orEmpty()
+    }
 
     return GuestLocationAutofillSelection(
         country = country,
@@ -390,6 +394,7 @@ fun RequestHelpScreen(
     var checkingActiveRequest by remember { mutableStateOf(isLoggedIn) }
     var guestLocationAutoFillLoading by remember { mutableStateOf(false) }
     var guestLocationPermissionHandled by rememberSaveable { mutableStateOf(false) }
+    val guestFormInteractionStarted = !isLoggedIn && formState != RequestHelpFormState()
     fun triggerGuestLocationAutofill() {
         scope.launch {
             if (guestLocationAutoFillLoading) return@launch
@@ -420,24 +425,30 @@ fun RequestHelpScreen(
                     return@launch
                 }
 
+                val previousFormState = formState
                 val autofill = resolveGuestLocationAutofillSelection(
-                    currentCountry = formState.country,
-                    currentCity = formState.city,
-                    currentDistrict = formState.district,
-                    currentNeighborhood = formState.neighborhood,
-                    currentShortAddress = formState.shortAddress,
+                    currentCountry = previousFormState.country,
+                    currentCity = previousFormState.city,
+                    currentDistrict = previousFormState.district,
+                    currentNeighborhood = previousFormState.neighborhood,
+                    currentShortAddress = previousFormState.shortAddress,
                     reverseLocation = reverseLocation,
                     locations = availableLocationData
                 )
 
-                formState = formState.copy(
+                val nextFormState = previousFormState.copy(
                     country = autofill.country,
                     city = autofill.city,
                     district = autofill.district,
                     neighborhood = autofill.neighborhood,
                     shortAddress = autofill.shortAddress
                 )
-                infoMessage = "Current location applied. You can edit location fields if needed."
+                if (nextFormState != previousFormState) {
+                    formState = nextFormState
+                    infoMessage = "Current location applied without changing non-empty fields."
+                } else {
+                    infoMessage = "Current location detected. Existing location values were kept."
+                }
             } catch (cancellationException: CancellationException) {
                 throw cancellationException
             } catch (_: Exception) {
@@ -507,8 +518,8 @@ fun RequestHelpScreen(
         }
     }
 
-    LaunchedEffect(isLoggedIn) {
-        if (isLoggedIn || guestLocationPermissionHandled) {
+    LaunchedEffect(isLoggedIn, guestFormInteractionStarted, guestLocationPermissionHandled) {
+        if (isLoggedIn || guestLocationPermissionHandled || !guestFormInteractionStarted) {
             return@LaunchedEffect
         }
 
@@ -685,6 +696,20 @@ fun RequestHelpScreen(
 
                     if (!isLoggedIn && guestLocationAutoFillLoading) {
                         HelperText(text = "Detecting your current location. You can continue filling the form while this runs.")
+                    }
+
+                    if (!isLoggedIn) {
+                        SecondaryButton(
+                            text = "Use Current Location",
+                            onClick = {
+                                if (DeviceLocationProvider.hasLocationPermission(context)) {
+                                    triggerGuestLocationAutofill()
+                                } else {
+                                    locationPermissionLauncher.launch(DeviceLocationProvider.RequiredLocationPermissions)
+                                }
+                            },
+                            enabled = !guestLocationAutoFillLoading
+                        )
                     }
 
                     LocationSelector(

@@ -16,6 +16,7 @@ import com.neph.core.sync.SyncEntityType
 import com.neph.core.sync.SyncOperationStatus
 import com.neph.core.sync.SyncOperationType
 import com.neph.core.sync.SyncStatus
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -23,6 +24,7 @@ import java.util.Locale
 import java.util.UUID
 
 private const val PendingHelpRequestStatus = "PENDING_SYNC"
+private const val ReverseGeocodeTimeoutMillis = 7000L
 
 data class RequestHelpLocationSubmission(
     val country: String,
@@ -201,14 +203,16 @@ object RequestHelpRepository {
     ): RequestHelpReverseLocation? {
         ensureInitialized()
 
-        val response = JsonHttpClient.request(
-            path = String.format(
-                Locale.US,
-                "/location/reverse?lat=%.6f&lon=%.6f",
-                latitude,
-                longitude
+        val response = withTimeoutOrNull(ReverseGeocodeTimeoutMillis) {
+            JsonHttpClient.request(
+                path = String.format(
+                    Locale.US,
+                    "/location/reverse?lat=%.6f&lon=%.6f",
+                    latitude,
+                    longitude
+                )
             )
-        )
+        } ?: return null
 
         val item = response.optJSONObject("item") ?: return null
         val administrative = item.optJSONObject("administrative") ?: JSONObject()

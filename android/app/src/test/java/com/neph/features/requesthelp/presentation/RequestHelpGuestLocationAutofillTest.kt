@@ -57,4 +57,30 @@ class RequestHelpGuestLocationAutofillTest {
         assertEquals("anittepe", result.neighborhood)
         assertEquals("Existing Address", result.shortAddress)
     }
+
+    @Test
+    fun resolveGuestLocationAutofillSelection_doesNotOverwriteManualLocationValues() {
+        val result = resolveGuestLocationAutofillSelection(
+            currentCountry = "tr",
+            currentCity = "ankara",
+            currentDistrict = "cankaya",
+            currentNeighborhood = "anittepe",
+            currentShortAddress = "Manual Address",
+            reverseLocation = RequestHelpReverseLocation(
+                countryCode = "TR",
+                country = "Turkey",
+                city = "Istanbul",
+                district = "Beşiktaş",
+                neighborhood = "Balmumcu",
+                extraAddress = "Autofill Address"
+            ),
+            locations = locationData
+        )
+
+        assertEquals("tr", result.country)
+        assertEquals("ankara", result.city)
+        assertEquals("cankaya", result.district)
+        assertEquals("anittepe", result.neighborhood)
+        assertEquals("Manual Address", result.shortAddress)
+    }
 }
