@@ -335,6 +335,8 @@ object ProfileRepository {
             putString("neighborhood", profile.neighborhood)
             putString("extraAddress", profile.extraAddress)
             putBoolean("shareLocation", profile.shareLocation ?: false)
+            putString("sharedLatitude", profile.sharedLatitude?.toString())
+            putString("sharedLongitude", profile.sharedLongitude?.toString())
         }.apply()
     }
 
@@ -369,7 +371,9 @@ object ProfileRepository {
             district = prefs.getString("district", null),
             neighborhood = prefs.getString("neighborhood", null),
             extraAddress = prefs.getString("extraAddress", null),
-            shareLocation = if (prefs.contains("shareLocation")) prefs.getBoolean("shareLocation", false) else null
+            shareLocation = if (prefs.contains("shareLocation")) prefs.getBoolean("shareLocation", false) else null,
+            sharedLatitude = prefs.getString("sharedLatitude", null)?.toDoubleOrNull(),
+            sharedLongitude = prefs.getString("sharedLongitude", null)?.toDoubleOrNull()
         )
     }
 
@@ -385,6 +389,7 @@ object ProfileRepository {
         val privacySettings = profileJson.optJSONObject("privacySettings") ?: JSONObject()
         val expertise = profileJson.optJSONArray("expertise")?.optJSONObject(0)
         val administrative = locationProfile.optJSONObject("administrative") ?: JSONObject()
+        val coordinate = locationProfile.optJSONObject("coordinate") ?: JSONObject()
 
         val countryLabel = administrative.optStringOrNull("country")
             ?: locationProfile.optStringOrNull("country")
@@ -414,6 +419,10 @@ object ProfileRepository {
         val neighborhoodValue = neighborhoodFromAdministrative.ifBlank { parsedAddress.second }
         val extraAddressFromBackend = administrative.optStringOrNull("extraAddress")
             ?: parsedAddress.third
+        val sharedLatitude = coordinate.optNullableDouble("latitude")
+            ?: locationProfile.optNullableDouble("latitude")
+        val sharedLongitude = coordinate.optNullableDouble("longitude")
+            ?: locationProfile.optNullableDouble("longitude")
 
         return ProfileData(
             fullName = listOf(
@@ -442,7 +451,9 @@ object ProfileRepository {
                 .takeIf { it.isNotBlank() },
             extraAddress = extraAddressFromBackend
                 ?: cachedProfileSnapshot.extraAddress,
-            shareLocation = privacySettings.optNullableBoolean("locationSharingEnabled")
+            shareLocation = privacySettings.optNullableBoolean("locationSharingEnabled"),
+            sharedLatitude = sharedLatitude,
+            sharedLongitude = sharedLongitude
         )
     }
 
@@ -548,6 +559,10 @@ object ProfileRepository {
 
     private fun JSONObject.optNullableBoolean(key: String): Boolean? {
         return if (has(key) && !isNull(key)) optBoolean(key) else null
+    }
+
+    private fun JSONObject.optNullableDouble(key: String): Double? {
+        return if (has(key) && !isNull(key)) optDouble(key) else null
     }
 
     private fun ensureInitialized() {

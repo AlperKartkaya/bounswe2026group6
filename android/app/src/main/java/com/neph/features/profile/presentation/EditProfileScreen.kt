@@ -5,7 +5,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,7 +16,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -51,6 +49,8 @@ import com.neph.ui.components.inputs.AppTextField
 import com.neph.ui.components.selection.AppCheckbox
 import com.neph.ui.components.selection.AppToggleSwitch
 import com.neph.ui.layout.AppScaffold
+import com.neph.ui.map.LocationSelectionMapAction
+import com.neph.ui.map.SharedCoordinatesMapAction
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -66,6 +66,7 @@ fun EditProfileScreen(
     var loading by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf("") }
     var info by rememberSaveable { mutableStateOf("") }
+    var mapActionInfo by rememberSaveable { mutableStateOf("") }
 
     var countryCode by rememberSaveable { mutableStateOf(initialPhoneParts.countryCode) }
     var phone by rememberSaveable { mutableStateOf(initialPhoneParts.phone) }
@@ -75,6 +76,8 @@ fun EditProfileScreen(
     var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
     var locationLoading by remember { mutableStateOf(true) }
     var locationInfo by rememberSaveable { mutableStateOf("") }
+    var syncedSharedLatitude by remember { mutableStateOf(profile.sharedLatitude) }
+    var syncedSharedLongitude by remember { mutableStateOf(profile.sharedLongitude) }
 
     val scope = rememberCoroutineScope()
     val spacing = LocalNephSpacing.current
@@ -94,6 +97,8 @@ fun EditProfileScreen(
     LaunchedEffect(Unit) {
         try {
             profile = ProfileRepository.fetchAndCacheRemoteProfile()
+            syncedSharedLatitude = profile.sharedLatitude
+            syncedSharedLongitude = profile.sharedLongitude
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
@@ -104,6 +109,8 @@ fun EditProfileScreen(
             throw cancellationException
         } catch (_: ApiException) {
             profile = ProfileRepository.getProfile()
+            syncedSharedLatitude = profile.sharedLatitude
+            syncedSharedLongitude = profile.sharedLongitude
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
@@ -112,6 +119,8 @@ fun EditProfileScreen(
             ageText = profile.age?.toString().orEmpty()
         } catch (_: Exception) {
             profile = ProfileRepository.getProfile()
+            syncedSharedLatitude = profile.sharedLatitude
+            syncedSharedLongitude = profile.sharedLongitude
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
@@ -138,6 +147,7 @@ fun EditProfileScreen(
     fun handleSave() {
         error = ""
         info = ""
+        mapActionInfo = ""
 
         val (firstName, lastName) = splitFullName(profile.fullName.orEmpty())
         if (firstName.isBlank() || lastName.isBlank()) {
@@ -181,17 +191,20 @@ fun EditProfileScreen(
                     context = context,
                     sharingEnabled = profileToSync.shareLocation == true
                 )
-                val syncedProfile = when (locationShareAttempt.warning) {
+                val profileWithSharePolicy = when (locationShareAttempt.warning) {
                     CurrentLocationShareWarning.PERMISSION_DENIED -> profileToSync.copy(shareLocation = false)
                     CurrentLocationShareWarning.LOCATION_UNAVAILABLE -> profileToSync
                     null -> profileToSync
                 }
 
                 profile = ProfileRepository.syncProfile(
-                    profile = syncedProfile,
+                    profile = profileWithSharePolicy,
                     currentDeviceLocation = locationShareAttempt.location,
                     forceClearSharedCoordinates = locationShareAttempt.warning == CurrentLocationShareWarning.LOCATION_UNAVAILABLE
                 )
+                syncedSharedLatitude = profile.sharedLatitude
+                syncedSharedLongitude = profile.sharedLongitude
+
                 val phoneParts = normalizePhoneParts(profile.phone)
                 countryCode = phoneParts.countryCode
                 phone = phoneParts.phone
@@ -418,6 +431,26 @@ fun EditProfileScreen(
                         label = "Extra Address"
                     )
 
+                    LocationSelectionMapAction(
+                        countryKeyOrLabel = profile.country,
+                        cityKeyOrLabel = profile.city,
+                        districtKeyOrLabel = profile.district,
+                        neighborhoodValueOrLabel = profile.neighborhood,
+                        extraAddress = profile.extraAddress,
+                        locations = availableLocationData,
+                        enabled = !loading,
+                        onOpenFailure = { mapActionInfo = it },
+                        onOpenSuccess = { mapActionInfo = "" }
+                    )
+
+                    SharedCoordinatesMapAction(
+                        latitude = syncedSharedLatitude,
+                        longitude = syncedSharedLongitude,
+                        enabled = !loading,
+                        onOpenFailure = { mapActionInfo = it },
+                        onOpenSuccess = { mapActionInfo = "" }
+                    )
+
                     AppToggleSwitch(
                         checked = profile.shareLocation ?: false,
                         onCheckedChange = { shareEnabled ->
@@ -443,6 +476,10 @@ fun EditProfileScreen(
 
             if (info.isNotBlank()) {
                 HelperText(text = info)
+            }
+
+            if (mapActionInfo.isNotBlank()) {
+                HelperText(text = mapActionInfo)
             }
 
             PrimaryButton(

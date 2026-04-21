@@ -55,6 +55,7 @@ import com.neph.ui.components.inputs.AppTextField
 import com.neph.ui.components.selection.AppCheckbox
 import com.neph.ui.components.selection.AppMultiSelectChipGroup
 import com.neph.ui.layout.AppScaffold
+import com.neph.ui.map.LocationSelectionMapAction
 import com.neph.ui.theme.LocalNephSpacing
 import com.neph.ui.theme.NephTheme
 import kotlinx.coroutines.CancellationException
@@ -391,6 +392,7 @@ fun RequestHelpScreen(
     var loading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var infoMessage by remember { mutableStateOf("") }
+    var mapActionMessage by rememberSaveable { mutableStateOf("") }
     var checkingActiveRequest by remember { mutableStateOf(isLoggedIn) }
     var guestLocationAutoFillLoading by remember { mutableStateOf(false) }
     var guestLocationPermissionHandled by rememberSaveable { mutableStateOf(false) }
@@ -538,6 +540,7 @@ fun RequestHelpScreen(
         fieldErrors = nextFieldErrors
         errorMessage = ""
         infoMessage = ""
+        mapActionMessage = ""
 
         if (nextFieldErrors.hasAny()) {
             return
@@ -743,6 +746,18 @@ fun RequestHelpScreen(
                         label = "Short Address / Address Description",
                         error = fieldErrors.shortAddress
                     )
+
+                    LocationSelectionMapAction(
+                        countryKeyOrLabel = formState.country,
+                        cityKeyOrLabel = formState.city,
+                        districtKeyOrLabel = formState.district,
+                        neighborhoodValueOrLabel = formState.neighborhood,
+                        extraAddress = formState.shortAddress,
+                        locations = availableLocationData,
+                        enabled = !loading,
+                        onOpenFailure = { mapActionMessage = it },
+                        onOpenSuccess = { mapActionMessage = "" }
+                    )
                 }
             }
 
@@ -821,6 +836,10 @@ fun RequestHelpScreen(
 
             if (infoMessage.isNotBlank()) {
                 HelperText(text = infoMessage)
+            }
+
+            if (mapActionMessage.isNotBlank()) {
+                HelperText(text = mapActionMessage)
             }
 
             PrimaryButton(

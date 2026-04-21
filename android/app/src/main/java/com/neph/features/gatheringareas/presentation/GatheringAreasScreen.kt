@@ -1,8 +1,5 @@
 package com.neph.features.gatheringareas.presentation
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +37,8 @@ import com.neph.ui.components.display.HelperText
 import com.neph.ui.components.display.SectionCard
 import com.neph.ui.components.display.SectionHeader
 import com.neph.ui.layout.AppDrawerScaffold
+import com.neph.ui.map.NephMapIntegration
+import com.neph.ui.map.formatMapCoordinate
 import com.neph.ui.theme.LocalNephSpacing
 import com.neph.ui.theme.NephTheme
 import kotlinx.coroutines.CancellationException
@@ -158,15 +157,14 @@ fun GatheringAreasScreen(
     }
 
     fun openAreaInMap(item: GatheringAreaItem) {
-        val encodedLabel = Uri.encode(item.name.ifBlank { "Gathering Area" })
-        val geoUri = Uri.parse("geo:${item.latitude},${item.longitude}?q=${item.latitude},${item.longitude}($encodedLabel)")
-        val geoIntent = Intent(Intent.ACTION_VIEW, geoUri)
-
-        try {
-            context.startActivity(geoIntent)
-        } catch (_: ActivityNotFoundException) {
-            val browserUri = Uri.parse("https://www.openstreetmap.org/?mlat=${item.latitude}&mlon=${item.longitude}#map=17/${item.latitude}/${item.longitude}")
-            context.startActivity(Intent(Intent.ACTION_VIEW, browserUri))
+        val opened = NephMapIntegration.openCoordinates(
+            context = context,
+            latitude = item.latitude,
+            longitude = item.longitude,
+            label = item.name.ifBlank { "Gathering Area" }
+        )
+        if (!opened) {
+            infoMessage = "Could not open map application."
         }
     }
 
@@ -204,7 +202,7 @@ fun GatheringAreasScreen(
                     )
 
                     HelperText(
-                        text = "Showing results around $sourceLabel (${formatCoordinate(lastCenterLatitude)}, ${formatCoordinate(lastCenterLongitude)})."
+                        text = "Showing results around $sourceLabel (${formatMapCoordinate(lastCenterLatitude)}, ${formatMapCoordinate(lastCenterLongitude)})."
                     )
 
                     SecondaryButton(
@@ -325,7 +323,7 @@ fun GatheringAreasScreen(
                                 )
 
                                 Text(
-                                    text = "Coordinates: ${formatCoordinate(area.latitude)}, ${formatCoordinate(area.longitude)}",
+                                    text = "Coordinates: ${formatMapCoordinate(area.latitude)}, ${formatMapCoordinate(area.longitude)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -381,10 +379,6 @@ private fun formatCategory(category: String): String {
         "shelter" -> "Shelter"
         else -> category.replace('_', ' ').replaceFirstChar { it.uppercase() }
     }
-}
-
-private fun formatCoordinate(value: Double): String {
-    return String.format(Locale.US, "%.5f", value)
 }
 
 @Preview(showBackground = true, showSystemUi = true)
