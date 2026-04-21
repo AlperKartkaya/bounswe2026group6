@@ -133,16 +133,16 @@ fun GatheringAreasScreen(
                 loading = false
                 infoMessage = when (attempt.warning) {
                     CurrentLocationShareWarning.PERMISSION_DENIED ->
-                        "Location permission is denied. You can continue with the default map area."
+                        "Location permission is denied. Nearby results were not updated."
 
                     CurrentLocationShareWarning.LOCATION_UNAVAILABLE,
-                    null -> "Current location is unavailable. Showing the last loaded area."
+                    null -> "Current location is unavailable. Nearby results were not updated."
                 }
             } catch (cancellationException: CancellationException) {
                 throw cancellationException
             } catch (_: Exception) {
                 loading = false
-                infoMessage = "Current location is unavailable. Showing the last loaded area."
+                infoMessage = "Current location is unavailable. Nearby results were not updated."
             }
         }
     }
@@ -153,7 +153,7 @@ fun GatheringAreasScreen(
         if (grants.values.any { it }) {
             requestCurrentLocationAndRefresh()
         } else {
-            infoMessage = "Location permission denied. Showing gathering areas around the default area."
+            infoMessage = "Location permission denied. Nearby results were not updated."
         }
     }
 

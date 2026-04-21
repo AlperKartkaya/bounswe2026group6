@@ -1,5 +1,6 @@
 package com.neph.features.gatheringareas.data
 
+import com.neph.core.network.ApiException
 import com.neph.core.network.JsonHttpClient
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
@@ -60,15 +61,10 @@ object GatheringAreasRepository {
                     normalizedLimit
                 )
             )
-        } ?: return NearbyGatheringAreasResult(
-            centerLatitude = latitude,
-            centerLongitude = longitude,
-            radiusMeters = normalizedRadius,
-            source = "overpass",
-            requestedLimit = normalizedLimit,
-            returnedCount = 0,
-            skippedCount = 0,
-            areas = emptyList()
+        } ?: throw ApiException(
+            message = "Gathering areas request timed out.",
+            status = 504,
+            code = "OVERPASS_TIMEOUT"
         )
 
         return parseNearbyGatheringAreasResponse(
