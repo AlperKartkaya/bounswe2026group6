@@ -93,6 +93,7 @@ function mapHelpRequest(row) {
     internalStatus: row.status,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
+    cancelledAt: row.cancelled_at,
     isSavedLocally: row.is_saved_locally,
     helper: mapHelper(row),
   };
@@ -118,6 +119,7 @@ function buildSelectQuery() {
       hr.status,
       hr.created_at,
       hr.resolved_at,
+      hr.cancelled_at,
       hr.is_saved_locally,
       rl.location_id,
       rl.country,
@@ -199,6 +201,7 @@ async function createHelpRequest(input) {
           status,
           created_at,
           resolved_at,
+          cancelled_at,
           is_saved_locally
       `,
       [
@@ -370,6 +373,7 @@ async function markHelpRequestAsResolved(userId, requestId) {
       UPDATE help_requests
       SET status = 'RESOLVED',
           resolved_at = CURRENT_TIMESTAMP,
+          cancelled_at = NULL,
           is_saved_locally = FALSE
       WHERE user_id = $1 AND request_id = $2
     `,
@@ -385,6 +389,7 @@ async function markHelpRequestAsResolvedByRequestId(requestId) {
       UPDATE help_requests
       SET status = 'RESOLVED',
           resolved_at = CURRENT_TIMESTAMP,
+          cancelled_at = NULL,
           is_saved_locally = FALSE
       WHERE request_id = $1
     `,
@@ -399,6 +404,7 @@ async function markHelpRequestAsCancelled(userId, requestId) {
     `
       UPDATE help_requests
       SET status = 'CANCELLED',
+          cancelled_at = CURRENT_TIMESTAMP,
           is_saved_locally = FALSE
       WHERE user_id = $1 AND request_id = $2
     `,
@@ -413,6 +419,7 @@ async function markHelpRequestAsCancelledByRequestId(requestId) {
     `
       UPDATE help_requests
       SET status = 'CANCELLED',
+          cancelled_at = CURRENT_TIMESTAMP,
           is_saved_locally = FALSE
       WHERE request_id = $1
     `,
