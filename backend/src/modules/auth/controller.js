@@ -3,10 +3,6 @@ const {
   loginUser,
   verifyUserEmail,
   getCurrentUser,
-  getUsersForAdmin,
-  getHelpRequestsForAdmin,
-  getAnnouncementsForAdmin,
-  getStatsForAdmin,
   resendVerificationEmail,
   requestPasswordReset,
   resetPassword,
@@ -128,58 +124,6 @@ async function getMe(req, res) {
   }
 }
 
-async function getAdminUsers(_req, res) {
-  try {
-    const users = await getUsersForAdmin();
-
-    return res.status(200).json({ users });
-  } catch (_error) {
-    return res.status(500).json({
-      code: 'INTERNAL_ERROR',
-      message: 'Something went wrong',
-    });
-  }
-}
-
-async function getAdminHelpRequests(_req, res) {
-  try {
-    const helpRequests = await getHelpRequestsForAdmin();
-
-    return res.status(200).json({ helpRequests });
-  } catch (_error) {
-    return res.status(500).json({
-      code: 'INTERNAL_ERROR',
-      message: 'Something went wrong',
-    });
-  }
-}
-
-async function getAdminAnnouncements(_req, res) {
-  try {
-    const announcements = await getAnnouncementsForAdmin();
-
-    return res.status(200).json({ announcements });
-  } catch (_error) {
-    return res.status(500).json({
-      code: 'INTERNAL_ERROR',
-      message: 'Something went wrong',
-    });
-  }
-}
-
-async function getAdminStats(_req, res) {
-  try {
-    const stats = await getStatsForAdmin();
-
-    return res.status(200).json({ stats });
-  } catch (_error) {
-    return res.status(500).json({
-      code: 'INTERNAL_ERROR',
-      message: 'Something went wrong',
-    });
-  }
-}
-
 async function resendVerification(req, res) {
   try {
     const { email } = req.body;
@@ -292,10 +236,6 @@ module.exports = {
   login,
   verifyEmail,
   getMe,
-  getAdminUsers,
-  getAdminHelpRequests,
-  getAdminAnnouncements,
-  getAdminStats,
   resendVerification,
   forgotPassword,
   resetPasswordHandler,

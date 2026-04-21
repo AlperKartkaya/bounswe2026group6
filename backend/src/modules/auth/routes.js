@@ -16,16 +16,12 @@ const {
   login,
   verifyEmail,
   getMe,
-  getAdminUsers,
-  getAdminHelpRequests,
-  getAdminAnnouncements,
-  getAdminStats,
   resendVerification,
   forgotPassword,
   resetPasswordHandler,
   logout,
 } = require('./controller');
-const { requireAuth, requireAdmin } = require('./middleware');
+const { requireAuth } = require('./middleware');
 
 const authRouter = express.Router();
 
@@ -38,10 +34,6 @@ authRouter.post('/forgot-password', authLimiter, forgotPassword);
 authRouter.post('/reset-password', authLimiter, resetPasswordHandler);
 authRouter.post('/logout', requireAuth, logout);
 authRouter.get('/me', requireAuth, getMe);
-authRouter.get('/admin/users', requireAuth, requireAdmin, getAdminUsers);
-authRouter.get('/admin/help-requests', requireAuth, requireAdmin, getAdminHelpRequests);
-authRouter.get('/admin/announcements', requireAuth, requireAdmin, getAdminAnnouncements);
-authRouter.get('/admin/stats', requireAuth, requireAdmin, getAdminStats);
 
 module.exports = {
   authRouter,
