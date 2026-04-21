@@ -12,7 +12,7 @@ data class ProfileData(
     val bloodType: String? = null,
     val gender: String? = null,
     val age: Int? = null,
-    
+
     val medicalHistory: String? = null,
 
     val chronicDiseases: String? = null,
@@ -24,5 +24,7 @@ data class ProfileData(
     val neighborhood: String? = null,
     val extraAddress: String? = null,
 
-    val shareLocation: Boolean? = null
+    val shareLocation: Boolean? = null,
+    val sharedLatitude: Double? = null,
+    val sharedLongitude: Double? = null
 )

@@ -1,11 +1,11 @@
 package com.neph.features.auth.presentation
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -26,9 +25,9 @@ import com.neph.core.network.ApiException
 import com.neph.features.auth.util.countryCodeOptions
 import com.neph.features.profile.data.CurrentLocationShareWarning
 import com.neph.features.profile.data.DeviceLocationProvider
-import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.LocationData
 import com.neph.features.profile.data.LocationTreeRepository
+import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.bloodTypeOptions
 import com.neph.features.profile.data.combinePhoneNumber
 import com.neph.features.profile.data.expertiseOptionsFor
@@ -49,6 +48,8 @@ import com.neph.ui.components.inputs.AppTextField
 import com.neph.ui.components.selection.AppCheckbox
 import com.neph.ui.components.selection.AppToggleSwitch
 import com.neph.ui.layout.AuthScaffold
+import com.neph.ui.map.LocationSelectionMapAction
+import com.neph.ui.map.SharedCoordinatesMapAction
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -86,9 +87,12 @@ fun CompleteProfileScreen(
     var loading by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf("") }
     var info by rememberSaveable { mutableStateOf("") }
+    var mapActionInfo by rememberSaveable { mutableStateOf("") }
     var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
     var locationLoading by remember { mutableStateOf(true) }
     var locationInfo by rememberSaveable { mutableStateOf("") }
+    var syncedSharedLatitude by rememberSaveable { mutableStateOf(existingProfile.sharedLatitude) }
+    var syncedSharedLongitude by rememberSaveable { mutableStateOf(existingProfile.sharedLongitude) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -117,6 +121,7 @@ fun CompleteProfileScreen(
     fun handleSave() {
         error = ""
         info = ""
+        mapActionInfo = ""
 
         val normalizedName = fullName.trim()
         val normalizedPhone = phone.trim()
@@ -184,18 +189,27 @@ fun CompleteProfileScreen(
                     context = context,
                     sharingEnabled = profileToSync.shareLocation == true
                 )
+                val profileWithSharePolicy = when (locationShareAttempt.warning) {
+                    CurrentLocationShareWarning.PERMISSION_DENIED -> profileToSync.copy(shareLocation = false)
+                    CurrentLocationShareWarning.LOCATION_UNAVAILABLE -> profileToSync
+                    null -> profileToSync
+                }
 
-                ProfileRepository.syncProfile(
-                    profile = profileToSync,
-                    currentDeviceLocation = locationShareAttempt.location
+                val syncedProfile = ProfileRepository.syncProfile(
+                    profile = profileWithSharePolicy,
+                    currentDeviceLocation = locationShareAttempt.location,
+                    forceClearSharedCoordinates = locationShareAttempt.warning == CurrentLocationShareWarning.LOCATION_UNAVAILABLE
                 )
+                shareLocation = syncedProfile.shareLocation ?: false
+                syncedSharedLatitude = syncedProfile.sharedLatitude
+                syncedSharedLongitude = syncedProfile.sharedLongitude
 
-                info = when (locationShareAttempt.warning) {
+                val completionMessage = when (locationShareAttempt.warning) {
                     CurrentLocationShareWarning.PERMISSION_DENIED ->
-                        "Profile saved. Location permission is denied, so current coordinates were not shared."
+                        "Profile saved. Location permission is denied, so location sharing was turned off and stored coordinates were cleared."
 
                     CurrentLocationShareWarning.LOCATION_UNAVAILABLE ->
-                        "Profile saved. Current location is unavailable, so coordinates were not shared."
+                        "Profile saved. Current location is unavailable, so sharing remains on and stale coordinates were cleared."
 
                     null -> {
                         if (locationShareAttempt.location != null) {
@@ -205,6 +219,9 @@ fun CompleteProfileScreen(
                         }
                     }
                 }
+
+                info = completionMessage
+                Toast.makeText(context, completionMessage, Toast.LENGTH_LONG).show()
 
                 onComplete()
             } catch (cancellationException: CancellationException) {
@@ -301,19 +318,19 @@ fun CompleteProfileScreen(
             AppTextArea(
                 value = medicalHistory,
                 onValueChange = { medicalHistory = it },
-                label = "Medical History (optional — comma-separated)"
+                label = "Medical History (optional - comma-separated)"
             )
 
             AppTextArea(
                 value = chronicDiseases,
                 onValueChange = { chronicDiseases = it },
-                label = "Chronic Diseases (optional — comma-separated)"
+                label = "Chronic Diseases (optional - comma-separated)"
             )
 
             AppTextArea(
                 value = allergies,
                 onValueChange = { allergies = it },
-                label = "Allergies (optional — comma-separated)"
+                label = "Allergies (optional - comma-separated)"
             )
 
             Text("Profession", style = MaterialTheme.typography.titleMedium)
@@ -390,6 +407,26 @@ fun CompleteProfileScreen(
                 testTag = "complete_profile_extra_address"
             )
 
+            LocationSelectionMapAction(
+                countryKeyOrLabel = country,
+                cityKeyOrLabel = city,
+                districtKeyOrLabel = district,
+                neighborhoodValueOrLabel = neighborhood,
+                extraAddress = extraAddress,
+                locations = availableLocationData,
+                enabled = !loading,
+                onOpenFailure = { mapActionInfo = it },
+                onOpenSuccess = { mapActionInfo = "" }
+            )
+
+            SharedCoordinatesMapAction(
+                latitude = syncedSharedLatitude,
+                longitude = syncedSharedLongitude,
+                enabled = !loading,
+                onOpenFailure = { mapActionInfo = it },
+                onOpenSuccess = { mapActionInfo = "" }
+            )
+
             AppToggleSwitch(
                 checked = shareLocation,
                 onCheckedChange = { shareEnabled ->
@@ -413,6 +450,10 @@ fun CompleteProfileScreen(
 
             if (info.isNotBlank()) {
                 HelperText(text = info)
+            }
+
+            if (mapActionInfo.isNotBlank()) {
+                HelperText(text = mapActionInfo)
             }
 
             SaveActionBar(onSave = ::handleSave, loading = loading)
