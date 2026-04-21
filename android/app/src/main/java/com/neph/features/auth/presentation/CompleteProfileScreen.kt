@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
+import android.widget.Toast
 import com.neph.core.network.ApiException
 import com.neph.features.auth.util.countryCodeOptions
 import com.neph.features.profile.data.CurrentLocationShareWarning
@@ -184,18 +185,24 @@ fun CompleteProfileScreen(
                     context = context,
                     sharingEnabled = profileToSync.shareLocation == true
                 )
+                val syncedProfile = when (locationShareAttempt.warning) {
+                    CurrentLocationShareWarning.PERMISSION_DENIED -> profileToSync.copy(shareLocation = false)
+                    CurrentLocationShareWarning.LOCATION_UNAVAILABLE -> profileToSync
+                    null -> profileToSync
+                }
 
                 ProfileRepository.syncProfile(
-                    profile = profileToSync,
-                    currentDeviceLocation = locationShareAttempt.location
+                    profile = syncedProfile,
+                    currentDeviceLocation = locationShareAttempt.location,
+                    forceClearSharedCoordinates = locationShareAttempt.warning == CurrentLocationShareWarning.LOCATION_UNAVAILABLE
                 )
 
-                info = when (locationShareAttempt.warning) {
+                val completionMessage = when (locationShareAttempt.warning) {
                     CurrentLocationShareWarning.PERMISSION_DENIED ->
-                        "Profile saved. Location permission is denied, so current coordinates were not shared."
+                        "Profile saved. Location permission is denied, so location sharing was turned off and stored coordinates were cleared."
 
                     CurrentLocationShareWarning.LOCATION_UNAVAILABLE ->
-                        "Profile saved. Current location is unavailable, so coordinates were not shared."
+                        "Profile saved. Current location is unavailable, so sharing remains on and stale coordinates were cleared."
 
                     null -> {
                         if (locationShareAttempt.location != null) {
@@ -205,6 +212,9 @@ fun CompleteProfileScreen(
                         }
                     }
                 }
+
+                info = completionMessage
+                Toast.makeText(context, completionMessage, Toast.LENGTH_LONG).show()
 
                 onComplete()
             } catch (cancellationException: CancellationException) {

@@ -181,10 +181,16 @@ fun EditProfileScreen(
                     context = context,
                     sharingEnabled = profileToSync.shareLocation == true
                 )
+                val syncedProfile = when (locationShareAttempt.warning) {
+                    CurrentLocationShareWarning.PERMISSION_DENIED -> profileToSync.copy(shareLocation = false)
+                    CurrentLocationShareWarning.LOCATION_UNAVAILABLE -> profileToSync
+                    null -> profileToSync
+                }
 
                 profile = ProfileRepository.syncProfile(
-                    profile = profileToSync,
-                    currentDeviceLocation = locationShareAttempt.location
+                    profile = syncedProfile,
+                    currentDeviceLocation = locationShareAttempt.location,
+                    forceClearSharedCoordinates = locationShareAttempt.warning == CurrentLocationShareWarning.LOCATION_UNAVAILABLE
                 )
                 val phoneParts = normalizePhoneParts(profile.phone)
                 countryCode = phoneParts.countryCode
@@ -194,10 +200,10 @@ fun EditProfileScreen(
                 ageText = profile.age?.toString().orEmpty()
                 info = when (locationShareAttempt.warning) {
                     CurrentLocationShareWarning.PERMISSION_DENIED ->
-                        "Profile updated successfully. Location permission is denied, so current coordinates were not shared."
+                        "Profile updated successfully. Location permission is denied, so location sharing was turned off and stored coordinates were cleared."
 
                     CurrentLocationShareWarning.LOCATION_UNAVAILABLE ->
-                        "Profile updated successfully. Current location is unavailable, so coordinates were not shared."
+                        "Profile updated successfully. Current location is unavailable, so sharing remains on and stale coordinates were cleared."
 
                     null -> {
                         if (locationShareAttempt.location != null) {
