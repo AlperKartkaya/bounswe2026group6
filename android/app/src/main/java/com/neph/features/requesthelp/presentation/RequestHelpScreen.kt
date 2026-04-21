@@ -46,7 +46,6 @@ import com.neph.features.requesthelp.data.RequestHelpRepository
 import com.neph.features.requesthelp.data.RequestHelpSubmission
 import com.neph.ui.components.buttons.PrimaryButton
 import com.neph.ui.components.buttons.SecondaryButton
-import com.neph.ui.components.buttons.TextActionButton
 import com.neph.ui.components.display.HelperText
 import com.neph.ui.components.display.SectionCard
 import com.neph.ui.components.display.SectionHeader
@@ -56,8 +55,7 @@ import com.neph.ui.components.inputs.AppTextField
 import com.neph.ui.components.selection.AppCheckbox
 import com.neph.ui.components.selection.AppMultiSelectChipGroup
 import com.neph.ui.layout.AppScaffold
-import com.neph.ui.map.NephMapIntegration
-import com.neph.ui.map.buildLocationSelectionMapQuery
+import com.neph.ui.map.LocationSelectionMapAction
 import com.neph.ui.theme.LocalNephSpacing
 import com.neph.ui.theme.NephTheme
 import kotlinx.coroutines.CancellationException
@@ -394,6 +392,7 @@ fun RequestHelpScreen(
     var loading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var infoMessage by remember { mutableStateOf("") }
+    var mapActionMessage by rememberSaveable { mutableStateOf("") }
     var checkingActiveRequest by remember { mutableStateOf(isLoggedIn) }
     var guestLocationAutoFillLoading by remember { mutableStateOf(false) }
     var guestLocationPermissionHandled by rememberSaveable { mutableStateOf(false) }
@@ -541,6 +540,7 @@ fun RequestHelpScreen(
         fieldErrors = nextFieldErrors
         errorMessage = ""
         infoMessage = ""
+        mapActionMessage = ""
 
         if (nextFieldErrors.hasAny()) {
             return
@@ -693,15 +693,6 @@ fun RequestHelpScreen(
                         subtitle = "Use the same location structure as your profile."
                     )
 
-                    val selectedLocationMapQuery = buildLocationSelectionMapQuery(
-                        countryKeyOrLabel = formState.country,
-                        cityKeyOrLabel = formState.city,
-                        districtKeyOrLabel = formState.district,
-                        neighborhoodValueOrLabel = formState.neighborhood,
-                        extraAddress = formState.shortAddress,
-                        locations = availableLocationData
-                    )
-
                     if (locationLoading) {
                         HelperText(text = "Loading location options...")
                     }
@@ -756,26 +747,17 @@ fun RequestHelpScreen(
                         error = fieldErrors.shortAddress
                     )
 
-                    if (selectedLocationMapQuery.isNotBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            TextActionButton(
-                                text = "Open Selected Location in Map",
-                                onClick = {
-                                    val opened = NephMapIntegration.openLocationQuery(
-                                        context = context,
-                                        query = selectedLocationMapQuery
-                                    )
-                                    if (!opened) {
-                                        infoMessage = "Could not open map application."
-                                    }
-                                },
-                                enabled = !loading
-                            )
-                        }
-                    }
+                    LocationSelectionMapAction(
+                        countryKeyOrLabel = formState.country,
+                        cityKeyOrLabel = formState.city,
+                        districtKeyOrLabel = formState.district,
+                        neighborhoodValueOrLabel = formState.neighborhood,
+                        extraAddress = formState.shortAddress,
+                        locations = availableLocationData,
+                        enabled = !loading,
+                        onOpenFailure = { mapActionMessage = it },
+                        onOpenSuccess = { mapActionMessage = "" }
+                    )
                 }
             }
 
@@ -854,6 +836,10 @@ fun RequestHelpScreen(
 
             if (infoMessage.isNotBlank()) {
                 HelperText(text = infoMessage)
+            }
+
+            if (mapActionMessage.isNotBlank()) {
+                HelperText(text = mapActionMessage)
             }
 
             PrimaryButton(
