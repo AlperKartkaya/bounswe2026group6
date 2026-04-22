@@ -7,10 +7,6 @@ const {
   markEmailVerified,
   findUserById,
   findAdminByUserId,
-  listUsers,
-  listHelpRequests,
-  listAnnouncements,
-  getBasicStats,
   updateUserPassword,
 } = require('./repository');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../../config/mailer');
@@ -199,22 +195,6 @@ async function getCurrentUser(userId) {
   };
 }
 
-async function getUsersForAdmin() {
-  return listUsers();
-}
-
-async function getHelpRequestsForAdmin() {
-  return listHelpRequests();
-}
-
-async function getAnnouncementsForAdmin() {
-  return listAnnouncements();
-}
-
-async function getStatsForAdmin() {
-  return getBasicStats();
-}
-
 async function resendVerificationEmail(email) {
   const normalizedEmail = email.toLowerCase().trim();
   const user = await findUserByEmail(normalizedEmail);
@@ -299,10 +279,6 @@ module.exports = {
   loginUser,
   verifyUserEmail,
   getCurrentUser,
-  getUsersForAdmin,
-  getHelpRequestsForAdmin,
-  getAnnouncementsForAdmin,
-  getStatsForAdmin,
   resendVerificationEmail,
   requestPasswordReset,
   resetPassword,
