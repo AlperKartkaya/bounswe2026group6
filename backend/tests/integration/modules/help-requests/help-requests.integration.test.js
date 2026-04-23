@@ -72,6 +72,79 @@ async function seedActiveUser(userId, email = 'user@example.com') {
 	);
 }
 
+async function seedVolunteer({
+	volunteerId,
+	userId,
+	isAvailable = true,
+	latitude = null,
+	longitude = null,
+	locationUpdatedAt = '2026-04-23T08:00:00.000Z',
+}) {
+	await query(
+		`
+			INSERT INTO volunteers (
+				volunteer_id,
+				user_id,
+				is_available,
+				last_known_latitude,
+				last_known_longitude,
+				location_updated_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6);
+		`,
+		[volunteerId, userId, isAvailable, latitude, longitude, locationUpdatedAt],
+	);
+}
+
+async function seedVolunteerProfile(userId, expertiseArea) {
+	const profileId = `prf_${userId}`;
+
+	await query(
+		`
+			INSERT INTO user_profiles (profile_id, user_id, first_name, last_name, phone_number)
+			VALUES ($1, $2, 'Helper', 'User', '5301234567');
+		`,
+		[profileId, userId],
+	);
+
+	if (expertiseArea) {
+		await query(
+			`
+				INSERT INTO expertise (expertise_id, profile_id, profession, expertise_area, is_verified)
+				VALUES ($1, $2, 'Volunteer', $3, FALSE);
+			`,
+			[`exp_${userId}`, profileId, expertiseArea],
+		);
+	}
+}
+
+async function seedAssignedRequestForVolunteer({ requestId, requesterUserId, volunteerId }) {
+	await query(
+		`
+			INSERT INTO help_requests (
+				request_id,
+				user_id,
+				help_types,
+				need_type,
+				description,
+				status,
+				contact_full_name,
+				contact_phone
+			)
+			VALUES ($1, $2, ARRAY['food'], 'food', 'Existing assignment', 'ASSIGNED', 'Busy Person', 5550000000);
+		`,
+		[requestId, requesterUserId],
+	);
+
+	await query(
+		`
+			INSERT INTO assignments (assignment_id, volunteer_id, request_id, assigned_at, is_cancelled)
+			VALUES ($1, $2, $3, CURRENT_TIMESTAMP, FALSE);
+		`,
+		[`asg_${requestId}`, volunteerId, requestId],
+	);
+}
+
 beforeEach(async () => {
 	await query(`
 		TRUNCATE TABLE
@@ -821,6 +894,80 @@ describe('help-requests integration', () => {
 		expect(listRes.body.requests[0].helper.expertise).toBe('Medical');
 	});
 
+	test('request reads keep a single deterministic helper when multiple active assignments exist', async () => {
+		const app = createTestApp();
+		const requesterId = 'user_hr_multi_helper_requester';
+		const firstHelperId = 'user_hr_multi_helper_first';
+		const secondHelperId = 'user_hr_multi_helper_second';
+
+		await seedActiveUser(requesterId, 'multi-helper-requester@example.com');
+		await seedActiveUser(firstHelperId, 'multi-helper-first@example.com');
+		await seedActiveUser(secondHelperId, 'multi-helper-second@example.com');
+
+		const requesterToken = buildAuthToken(requesterId);
+
+		await query(
+			`INSERT INTO user_profiles (profile_id, user_id, first_name, last_name, phone_number)
+			 VALUES ('prf_multi_helper_first', $1, 'Ece', 'Demir', '5301111111')`,
+			[firstHelperId],
+		);
+		await query(
+			`INSERT INTO user_profiles (profile_id, user_id, first_name, last_name, phone_number)
+			 VALUES ('prf_multi_helper_second', $1, 'Kerem', 'Sahin', '5302222222')`,
+			[secondHelperId],
+		);
+		await query(
+			`INSERT INTO expertise (expertise_id, profile_id, profession, expertise_area, is_verified)
+			 VALUES ('exp_multi_helper_first', 'prf_multi_helper_first', 'Volunteer', 'Search and Rescue', FALSE)`,
+		);
+		await query(
+			`INSERT INTO expertise (expertise_id, profile_id, profession, expertise_area, is_verified)
+			 VALUES ('exp_multi_helper_second', 'prf_multi_helper_second', 'Volunteer', 'First Aid', FALSE)`,
+		);
+
+		const createRes = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${requesterToken}`)
+			.send(buildCreatePayload({ helpTypes: ['fire_brigade'], needType: 'fire_brigade' }));
+
+		const requestId = createRes.body.request.id;
+
+		await seedVolunteer({ volunteerId: 'vol_multi_helper_first', userId: firstHelperId });
+		await seedVolunteer({ volunteerId: 'vol_multi_helper_second', userId: secondHelperId });
+
+		await query(
+			`UPDATE help_requests SET status = 'ASSIGNED' WHERE request_id = $1`,
+			[requestId],
+		);
+
+		await query(
+			`INSERT INTO assignments (assignment_id, volunteer_id, request_id, assigned_at, is_cancelled)
+			 VALUES
+			   ('asg_multi_helper_first', 'vol_multi_helper_first', $1, '2026-04-23T08:00:00.000Z', FALSE),
+			   ('asg_multi_helper_second', 'vol_multi_helper_second', $1, '2026-04-23T08:05:00.000Z', FALSE)`,
+			[requestId],
+		);
+
+		const detailRes = await request(app)
+			.get(`/api/help-requests/${requestId}`)
+			.set('Authorization', `Bearer ${requesterToken}`);
+
+		expect(detailRes.status).toBe(200);
+		expect(detailRes.body.request.status).toBe('MATCHED');
+		expect(detailRes.body.request.helper).toBeTruthy();
+		expect(detailRes.body.request.helper.firstName).toBe('Ece');
+		expect(detailRes.body.request.helper.phone).toBe(5301111111);
+
+		const listRes = await request(app)
+			.get('/api/help-requests')
+			.set('Authorization', `Bearer ${requesterToken}`);
+
+		expect(listRes.status).toBe(200);
+		expect(listRes.body.requests).toHaveLength(1);
+		expect(listRes.body.requests[0].id).toBe(requestId);
+		expect(listRes.body.requests[0].helper.firstName).toBe('Ece');
+	});
+
 	test('help request without assignment has null helper', async () => {
 		const app = createTestApp();
 		const requesterId = 'user_hr_nohelper';
@@ -878,5 +1025,246 @@ describe('help-requests integration', () => {
 		expect(statusRes.status).toBe(200);
 		expect(statusRes.body.assignment).toBeTruthy();
 		expect(statusRes.body.assignment.request_id).toBe(createRes.body.request.id);
+	});
+
+	test('POST /api/help-requests prefers a first-aid-capable volunteer for first-aid-only requests', async () => {
+		const app = createTestApp();
+		const medicalHelperId = 'user_medical_helper';
+		const generalHelperId = 'user_general_helper';
+		const requesterId = 'user_request_first_aid';
+
+		await seedActiveUser(medicalHelperId, 'medicalhelper@example.com');
+		await seedActiveUser(generalHelperId, 'generalhelper@example.com');
+		await seedActiveUser(requesterId, 'requestfirstaid@example.com');
+		await seedVolunteer({
+			volunteerId: 'vol_medical_helper',
+			userId: medicalHelperId,
+			latitude: 41.043,
+			longitude: 29.009,
+			locationUpdatedAt: '2026-04-23T08:00:00.000Z',
+		});
+		await seedVolunteer({
+			volunteerId: 'vol_general_helper',
+			userId: generalHelperId,
+			latitude: 41.0431,
+			longitude: 29.0091,
+			locationUpdatedAt: '2026-04-23T08:10:00.000Z',
+		});
+		await seedVolunteerProfile(medicalHelperId, '["First Aid","Logistics"]');
+
+		const response = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${buildAuthToken(requesterId)}`)
+			.send(buildCreatePayload({
+				helpTypes: ['first_aid'],
+				location: {
+					country: 'turkiye',
+					city: 'istanbul',
+					district: 'besiktas',
+					neighborhood: 'levazim',
+					extraAddress: 'Bina B',
+					latitude: 41.043,
+					longitude: 29.009,
+				},
+			}));
+
+		expect(response.status).toBe(201);
+		expect(response.body.request.status).toBe('MATCHED');
+
+		const medicalStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${buildAuthToken(medicalHelperId)}`);
+		const generalStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${buildAuthToken(generalHelperId)}`);
+
+		expect(medicalStatus.body.assignment).toBeTruthy();
+		expect(medicalStatus.body.assignment.request_id).toBe(response.body.request.id);
+		expect(generalStatus.body.assignment).toBeNull();
+	});
+
+	test('POST /api/help-requests falls back to a general volunteer for first-aid-only requests when no medical volunteer is available', async () => {
+		const app = createTestApp();
+		const helperId = 'user_general_only_helper';
+		const requesterId = 'user_request_general_only';
+
+		await seedActiveUser(helperId, 'generalonly@example.com');
+		await seedActiveUser(requesterId, 'requestgeneralonly@example.com');
+		await seedVolunteer({
+			volunteerId: 'vol_general_only_helper',
+			userId: helperId,
+			latitude: 41.043,
+			longitude: 29.009,
+		});
+
+		const response = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${buildAuthToken(requesterId)}`)
+			.send(buildCreatePayload({
+				helpTypes: ['first_aid'],
+				location: {
+					country: 'turkiye',
+					city: 'istanbul',
+					district: 'besiktas',
+					neighborhood: 'levazim',
+					extraAddress: 'Bina B',
+					latitude: 41.043,
+					longitude: 29.009,
+				},
+			}));
+
+		expect(response.status).toBe(201);
+		expect(response.body.request.status).toBe('MATCHED');
+
+		const helperStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${buildAuthToken(helperId)}`);
+
+		expect(helperStatus.body.assignment).toBeTruthy();
+		expect(helperStatus.body.assignment.request_id).toBe(response.body.request.id);
+	});
+
+	test('POST /api/help-requests prefers a medical volunteer for combined first-aid and SAR requests', async () => {
+		const app = createTestApp();
+		const medicalHelperId = 'user_medical_combo';
+		const generalHelperId = 'user_general_combo';
+		const requesterId = 'user_request_combo';
+
+		await seedActiveUser(medicalHelperId, 'medicalcombo@example.com');
+		await seedActiveUser(generalHelperId, 'generalcombo@example.com');
+		await seedActiveUser(requesterId, 'requestcombo@example.com');
+		await seedVolunteer({ volunteerId: 'vol_medical_combo', userId: medicalHelperId });
+		await seedVolunteer({ volunteerId: 'vol_general_combo', userId: generalHelperId });
+		await seedVolunteerProfile(medicalHelperId, 'Medical');
+
+		const response = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${buildAuthToken(requesterId)}`)
+			.send(buildCreatePayload({ helpTypes: ['first_aid', 'fire_brigade'] }));
+
+		expect(response.status).toBe(201);
+		expect(response.body.request.status).toBe('MATCHED');
+
+		const medicalStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${buildAuthToken(medicalHelperId)}`);
+
+		expect(medicalStatus.body.assignment).toBeTruthy();
+		expect(medicalStatus.body.assignment.request_id).toBe(response.body.request.id);
+	});
+
+	test('POST /api/help-requests falls back deterministically for combined first-aid and SAR requests when coordinates are missing', async () => {
+		const app = createTestApp();
+		const firstHelperId = 'user_combo_fallback_a';
+		const secondHelperId = 'user_combo_fallback_b';
+		const requesterId = 'user_request_combo_fallback';
+
+		await seedActiveUser(firstHelperId, 'combofallbacka@example.com');
+		await seedActiveUser(secondHelperId, 'combofallbackb@example.com');
+		await seedActiveUser(requesterId, 'requestcombofallback@example.com');
+		await seedVolunteer({
+			volunteerId: 'vol_combo_fallback_a',
+			userId: firstHelperId,
+			locationUpdatedAt: '2026-04-23T08:00:00.000Z',
+		});
+		await seedVolunteer({
+			volunteerId: 'vol_combo_fallback_b',
+			userId: secondHelperId,
+			locationUpdatedAt: '2026-04-23T08:00:00.000Z',
+		});
+
+		const response = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${buildAuthToken(requesterId)}`)
+			.send(buildCreatePayload({
+				helpTypes: ['first_aid', 'fire_brigade'],
+				location: {
+					country: 'turkiye',
+					city: 'istanbul',
+					district: 'besiktas',
+					neighborhood: 'levazim',
+					extraAddress: 'Bina B, 3. kat, arka giris',
+				},
+			}));
+
+		expect(response.status).toBe(201);
+		expect(response.body.request.status).toBe('MATCHED');
+
+		const firstStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${buildAuthToken(firstHelperId)}`);
+
+		expect(firstStatus.body.assignment).toBeTruthy();
+		expect(firstStatus.body.assignment.request_id).toBe(response.body.request.id);
+	});
+
+	test('POST /api/help-requests ignores already assigned volunteers and enforces the 1 km cutoff', async () => {
+		const app = createTestApp();
+		const busyHelperId = 'user_busy_helper';
+		const nearHelperId = 'user_near_helper';
+		const farHelperId = 'user_far_helper';
+		const requesterId = 'user_request_cutoff';
+		const busyRequesterId = 'user_request_busy_existing';
+
+		await seedActiveUser(busyHelperId, 'busyhelper@example.com');
+		await seedActiveUser(nearHelperId, 'nearhelper@example.com');
+		await seedActiveUser(farHelperId, 'farhelper@example.com');
+		await seedActiveUser(requesterId, 'requestcutoff@example.com');
+		await seedActiveUser(busyRequesterId, 'busyexisting@example.com');
+
+		await seedVolunteer({
+			volunteerId: 'vol_busy_helper',
+			userId: busyHelperId,
+			latitude: 41.043,
+			longitude: 29.009,
+		});
+		await seedVolunteer({
+			volunteerId: 'vol_near_helper',
+			userId: nearHelperId,
+			latitude: 41.0432,
+			longitude: 29.0092,
+		});
+		await seedVolunteer({
+			volunteerId: 'vol_far_helper',
+			userId: farHelperId,
+			latitude: 41.06,
+			longitude: 29.06,
+		});
+		await seedVolunteerProfile(busyHelperId, 'First Aid');
+		await seedAssignedRequestForVolunteer({
+			requestId: 'req_existing_busy',
+			requesterUserId: busyRequesterId,
+			volunteerId: 'vol_busy_helper',
+		});
+
+		const response = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${buildAuthToken(requesterId)}`)
+			.send(buildCreatePayload({
+				helpTypes: ['first_aid'],
+				location: {
+					country: 'turkiye',
+					city: 'istanbul',
+					district: 'besiktas',
+					neighborhood: 'levazim',
+					extraAddress: 'Bina B',
+					latitude: 41.043,
+					longitude: 29.009,
+				},
+			}));
+
+		expect(response.status).toBe(201);
+		expect(response.body.request.status).toBe('MATCHED');
+
+		const nearStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${buildAuthToken(nearHelperId)}`);
+		const farStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${buildAuthToken(farHelperId)}`);
+
+		expect(nearStatus.body.assignment).toBeTruthy();
+		expect(nearStatus.body.assignment.request_id).toBe(response.body.request.id);
+		expect(farStatus.body.assignment).toBeNull();
 	});
 });

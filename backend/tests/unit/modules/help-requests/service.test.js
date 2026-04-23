@@ -257,6 +257,18 @@ describe('help-requests service', () => {
 			expect(result).toEqual(updated);
 		});
 
+		test('persists CANCELLED before freeing volunteers for authenticated requests', async () => {
+			const current = { id: 'req_1', internalStatus: 'ASSIGNED' };
+			const updated = { id: 'req_1', internalStatus: 'CANCELLED' };
+			repository.findHelpRequestByIdForUser.mockResolvedValueOnce(current);
+			repository.markHelpRequestAsCancelled.mockResolvedValueOnce(updated);
+
+			await updateMyHelpRequestStatus('u1', 'req_1', 'CANCELLED');
+
+			expect(repository.markHelpRequestAsCancelled.mock.invocationCallOrder[0])
+				.toBeLessThan(availabilityService.cancelAssignmentByRequestId.mock.invocationCallOrder[0]);
+		});
+
 		test('returns current request idempotently when already RESOLVED', async () => {
 			const current = { id: 'req_1', internalStatus: 'RESOLVED' };
 			repository.findHelpRequestByIdForUser.mockResolvedValueOnce(current);
@@ -334,6 +346,24 @@ describe('help-requests service', () => {
 			expect(availabilityService.cancelAssignmentByRequestId).toHaveBeenCalledWith('req_guest_cancel');
 			expect(repository.markHelpRequestAsCancelledByRequestId).toHaveBeenCalledWith('req_guest_cancel');
 			expect(result).toEqual(updated);
+		});
+
+		test('persists CANCELLED before freeing volunteers for guest requests', async () => {
+			const token = issueGuestHelpRequestAccessToken('req_guest_cancel_order');
+			repository.findHelpRequestById.mockResolvedValueOnce({
+				id: 'req_guest_cancel_order',
+				userId: null,
+				internalStatus: 'ASSIGNED',
+			});
+			repository.markHelpRequestAsCancelledByRequestId.mockResolvedValueOnce({
+				id: 'req_guest_cancel_order',
+				internalStatus: 'CANCELLED',
+			});
+
+			await updateGuestHelpRequestStatus('req_guest_cancel_order', 'CANCELLED', token);
+
+			expect(repository.markHelpRequestAsCancelledByRequestId.mock.invocationCallOrder[0])
+				.toBeLessThan(availabilityService.cancelAssignmentByRequestId.mock.invocationCallOrder[0]);
 		});
 
 		test('returns current request idempotently when guest request is already RESOLVED', async () => {

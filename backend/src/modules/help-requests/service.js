@@ -168,8 +168,9 @@ async function updateMyHelpRequestStatus(userId, requestId, nextStatus) {
     sync: () => markHelpRequestAsSynced(userId, requestId),
     resolve: () => markHelpRequestAsResolved(userId, requestId),
     cancel: async () => {
+      const cancelledRequest = await markHelpRequestAsCancelled(userId, requestId);
       await cancelAssignmentByRequestId(requestId);
-      return markHelpRequestAsCancelled(userId, requestId);
+      return cancelledRequest;
     },
   });
 }
@@ -185,8 +186,9 @@ async function updateGuestHelpRequestStatus(requestId, nextStatus, guestAccessTo
     sync: () => markHelpRequestAsSyncedByRequestId(requestId),
     resolve: () => markHelpRequestAsResolvedByRequestId(requestId),
     cancel: async () => {
+      const cancelledRequest = await markHelpRequestAsCancelledByRequestId(requestId);
       await cancelAssignmentByRequestId(requestId);
-      return markHelpRequestAsCancelledByRequestId(requestId);
+      return cancelledRequest;
     },
   });
 }

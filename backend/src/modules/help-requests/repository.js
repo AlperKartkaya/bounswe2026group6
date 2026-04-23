@@ -139,10 +139,15 @@ function buildSelectQuery() {
       helper_expertise.expertise_area AS helper_expertise_area
     FROM help_requests hr
     LEFT JOIN request_locations rl ON rl.request_id = hr.request_id
-    LEFT JOIN assignments asg
-      ON asg.request_id = hr.request_id
-      AND asg.is_cancelled = FALSE
-    LEFT JOIN volunteers vol ON vol.volunteer_id = asg.volunteer_id
+    LEFT JOIN LATERAL (
+      SELECT a.volunteer_id
+      FROM assignments a
+      WHERE a.request_id = hr.request_id
+        AND a.is_cancelled = FALSE
+      ORDER BY a.assigned_at ASC, a.assignment_id ASC
+      LIMIT 1
+    ) primary_assignment ON TRUE
+    LEFT JOIN volunteers vol ON vol.volunteer_id = primary_assignment.volunteer_id
     LEFT JOIN users helper_user ON helper_user.user_id = vol.user_id
     LEFT JOIN user_profiles helper_profile ON helper_profile.user_id = vol.user_id
     LEFT JOIN LATERAL (
