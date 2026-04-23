@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 
 const { availabilityRouter } = require('../../../../src/modules/availability/routes');
 const { tryToAssignRequest } = require('../../../../src/modules/availability/service');
+const { createAssignment } = require('../../../../src/modules/availability/repository');
 const { query } = require('../../../../src/db/pool');
 
 function createTestApp() {
@@ -401,6 +402,38 @@ describe('Availability integration', () => {
     expect(statusResult.rows[0].status).toBe('ASSIGNED');
   });
 
+  test('createAssignment prevents multiple simultaneous active assignments for the same volunteer', async () => {
+    await seedActiveUser('user_vol_guarded', 'guarded-volunteer@example.com');
+    await seedVolunteer({ volunteerId: 'vol_guarded', userId: 'user_vol_guarded', isAvailable: true });
+
+    await seedActiveUser('user_req_guarded_a', 'guarded-a@example.com');
+    await seedActiveUser('user_req_guarded_b', 'guarded-b@example.com');
+    await seedHelpRequest('req_guarded_a', 'user_req_guarded_a');
+    await seedHelpRequest('req_guarded_b', 'user_req_guarded_b', {
+      createdAt: '2026-04-23T08:05:00.000Z',
+    });
+
+    const [firstAssignment, secondAssignment] = await Promise.all([
+      createAssignment('vol_guarded', 'req_guarded_a'),
+      createAssignment('vol_guarded', 'req_guarded_b'),
+    ]);
+
+    expect([firstAssignment, secondAssignment].filter(Boolean)).toHaveLength(1);
+
+    const assignmentRows = await query(
+      `
+        SELECT request_id
+        FROM assignments
+        WHERE volunteer_id = $1 AND is_cancelled = FALSE
+        ORDER BY request_id ASC;
+      `,
+      ['vol_guarded'],
+    );
+
+    expect(assignmentRows.rows).toHaveLength(1);
+    expect(['req_guarded_a', 'req_guarded_b']).toContain(assignmentRows.rows[0].request_id);
+  });
+
   test('tryToAssignRequest uses the schema default affectedPeopleCount of 1 when SAR count is omitted', async () => {
     await seedActiveUser('user_r_sar_single', 'sar-single@example.com');
     await seedHelpRequest('req_sar_single', 'user_r_sar_single', {
@@ -545,6 +578,17 @@ describe('Availability integration', () => {
 
     expect(await listAssignedVolunteerIds('req_fa_only_late')).toEqual(['vol_general_fa_only']);
 
+    await seedActiveUser('user_vol_general_fa_only_2', 'general-fa-only-2@example.com');
+
+    const secondGeneralResponse = await request(app)
+      .post('/api/availability/toggle')
+      .set('Authorization', `Bearer ${buildAuthToken('user_vol_general_fa_only_2')}`)
+      .send({ isAvailable: true });
+
+    expect(secondGeneralResponse.status).toBe(200);
+    expect(secondGeneralResponse.body.assignment).toBeNull();
+    expect(await listAssignedVolunteerIds('req_fa_only_late')).toEqual(['vol_general_fa_only']);
+
     await seedActiveUser('user_vol_fa_only_late', 'fa-only-late@example.com');
     await seedVolunteer({ volunteerId: 'vol_fa_only_late', userId: 'user_vol_fa_only_late', isAvailable: false });
     await seedVolunteerProfile('user_vol_fa_only_late', '["First Aid"]');
@@ -599,6 +643,48 @@ describe('Availability integration', () => {
     expect(assignedVolunteerIds).toHaveLength(2);
     expect(assignedVolunteerIds).toContain('vol_general_progress');
     expect(assignedVolunteerIds).toContain('vol_fa_progress');
+
+    const requestStatus = await query('SELECT status FROM help_requests WHERE request_id = $1', ['req_fa_sar_progress']);
+    expect(requestStatus.rows[0].status).toBe('IN_PROGRESS');
+  });
+
+  test('POST /api/availability/toggle to false preserves IN_PROGRESS while cancelling assignment', async () => {
+    const app = createTestApp();
+    const volunteerUserId = 'user_v_in_progress_preserve';
+    const requesterUserId = 'user_r_in_progress_preserve';
+    await seedActiveUser(volunteerUserId, 'in-progress-preserve-volunteer@example.com');
+    await seedActiveUser(requesterUserId, 'in-progress-preserve-requester@example.com');
+    await seedHelpRequest('req_in_progress_preserve', requesterUserId);
+    const token = buildAuthToken(volunteerUserId);
+
+    await request(app)
+      .post('/api/availability/toggle')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ isAvailable: true });
+
+    await query(
+      `
+        UPDATE help_requests
+        SET status = 'IN_PROGRESS'
+        WHERE request_id = 'req_in_progress_preserve';
+      `,
+    );
+
+    const response = await request(app)
+      .post('/api/availability/toggle')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ isAvailable: false });
+
+    expect(response.status).toBe(200);
+
+    const assignmentRows = await query(
+      'SELECT * FROM assignments WHERE request_id = $1 AND is_cancelled = FALSE',
+      ['req_in_progress_preserve'],
+    );
+    expect(assignmentRows.rows).toHaveLength(0);
+
+    const requestStatus = await query('SELECT status FROM help_requests WHERE request_id = $1', ['req_in_progress_preserve']);
+    expect(requestStatus.rows[0].status).toBe('IN_PROGRESS');
   });
 
   test('minimum first coverage happens before SAR expansion across simultaneous requests', async () => {

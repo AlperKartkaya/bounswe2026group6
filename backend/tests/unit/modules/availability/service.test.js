@@ -21,6 +21,8 @@ describe('Availability Service', () => {
     jest.clearAllMocks();
     repository.findAvailableVolunteersForMatching.mockResolvedValue([]);
     repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
+    repository.markRequestAssignedIfPending.mockResolvedValue(null);
+    repository.syncRequestStatusPreservingInProgress.mockResolvedValue(null);
   });
 
   describe('setAvailability', () => {
@@ -51,8 +53,23 @@ describe('Availability Service', () => {
 
       expect(repository.findMatchingRequestForVolunteer).toHaveBeenCalledWith('vol_123');
       expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'ASSIGNED');
+      expect(repository.markRequestAssignedIfPending).toHaveBeenCalledWith('req_123');
       expect(result.assignment).toEqual(assignment);
+    });
+
+    it('should skip request status updates when guarded assignment creation returns null', async () => {
+      repository.findVolunteerByUserId.mockResolvedValue(volunteer);
+      repository.updateVolunteerAvailability.mockResolvedValue({ ...volunteer, is_available: true });
+      repository.findAvailableVolunteersForMatching.mockResolvedValue([{ ...volunteer, is_available: true }]);
+      repository.getAssignmentByVolunteerId.mockResolvedValue(null);
+      repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_123' });
+      repository.createAssignment.mockResolvedValue(null);
+
+      const result = await setAvailability(userId, { isAvailable: true });
+
+      expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_123');
+      expect(repository.markRequestAssignedIfPending).not.toHaveBeenCalled();
+      expect(result.assignment).toBeNull();
     });
 
     it('should cancel assignment if volunteer becomes unavailable', async () => {
@@ -64,7 +81,7 @@ describe('Availability Service', () => {
       const result = await setAvailability(userId, { isAvailable: false });
 
       expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'PENDING');
+      expect(repository.syncRequestStatusPreservingInProgress).toHaveBeenCalledWith('req_123');
       expect(result.volunteer.is_available).toBe(false);
     });
   });
@@ -110,7 +127,7 @@ describe('Availability Service', () => {
       const result = await syncAvailability(userId, { records });
 
       expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'PENDING');
+      expect(repository.syncRequestStatusPreservingInProgress).toHaveBeenCalledWith('req_123');
       expect(result.assignment).toBeNull();
     });
   });
@@ -133,7 +150,7 @@ describe('Availability Service', () => {
   });
 
   describe('cancelMyAssignment', () => {
-    it('should cancel assignment, set request back to pending and set volunteer unavailable', async () => {
+    it('should cancel assignment, resync request status and set volunteer unavailable', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
       repository.getAssignmentById.mockResolvedValue(assignment);
       repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
@@ -141,7 +158,7 @@ describe('Availability Service', () => {
       const result = await cancelMyAssignment(userId, { assignmentId: 'asg_123' });
 
       expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'PENDING');
+      expect(repository.syncRequestStatusPreservingInProgress).toHaveBeenCalledWith('req_123');
       expect(repository.updateVolunteerAvailability).toHaveBeenCalledWith('vol_123', false, undefined, undefined);
       expect(result.message).toContain('Assignment cancelled, you are now unavailable');
     });
@@ -289,7 +306,7 @@ describe('Availability Service', () => {
       const result = await tryToAssignRequest('req_123');
 
       expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'ASSIGNED');
+      expect(repository.markRequestAssignedIfPending).toHaveBeenCalledWith('req_123');
       expect(result).toBe(true);
     });
 

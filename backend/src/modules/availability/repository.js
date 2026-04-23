@@ -7,6 +7,7 @@ const SEARCH_AND_RESCUE_HELP_TYPES = new Set(['search_and_rescue', 'sar', 'fire_
 const SUPPLIES_HELP_TYPES = new Set(['food', 'water', 'basic_supplies', 'supplies']);
 const SHELTER_HELP_TYPES = new Set(['shelter']);
 const FIRST_AID_EXPERTISE_MARKERS = new Set(['first_aid', 'medical']);
+const FIRST_AID_ONLY_GENERAL_FALLBACK_CAP = 1;
 
 function makeId(prefix) {
   return `${prefix}_${randomUUID().replace(/-/g, '')}`;
@@ -159,6 +160,10 @@ function buildRequestMatchContext(requestRow) {
     : 1;
   const needsFirstAidSpecialist = hasFirstAid && !hasFirstAidCapableAssignment;
   const needsSearchAndRescueCoverage = hasSearchAndRescue && activeAssignmentCount < sarTargetTotal;
+  const firstAidOnlyGeneralFallbackCapReached = hasFirstAid
+    && !hasSearchAndRescue
+    && !hasFirstAidCapableAssignment
+    && activeAssignmentCount >= FIRST_AID_ONLY_GENERAL_FALLBACK_CAP;
 
   let priority = 0;
 
@@ -194,11 +199,23 @@ function buildRequestMatchContext(requestRow) {
     sar_target_total: sarTargetTotal,
     needs_first_aid_specialist: needsFirstAidSpecialist,
     needs_search_and_rescue_coverage: needsSearchAndRescueCoverage,
+    first_aid_only_general_fallback_cap_reached: firstAidOnlyGeneralFallbackCapReached,
     needs_initial_coverage: activeAssignmentCount === 0,
     is_internally_fulfilled: isInternallyFulfilled,
     assignment_phase_rank: activeAssignmentCount === 0 ? 0 : 1,
     priority,
   };
+}
+
+function canVolunteerMatchRequest(volunteerContext, requestContext) {
+  if (
+    requestContext.first_aid_only_general_fallback_cap_reached
+    && !volunteerContext.is_first_aid_capable
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function buildVolunteerMatchContext(volunteerRow) {
@@ -218,6 +235,11 @@ function buildVolunteerMatchContext(volunteerRow) {
 
 function buildVolunteerCandidateForRequest(requestContext, volunteerRow) {
   const volunteerContext = buildVolunteerMatchContext(volunteerRow);
+
+  if (!canVolunteerMatchRequest(volunteerContext, requestContext)) {
+    return null;
+  }
+
   const distanceMeters = calculateDistanceMeters(
     {
       latitude: requestContext.latitude,
@@ -238,6 +260,11 @@ function buildVolunteerCandidateForRequest(requestContext, volunteerRow) {
 
 function buildRequestCandidateForVolunteer(volunteerContext, requestRow) {
   const requestContext = buildRequestMatchContext(requestRow);
+
+  if (!canVolunteerMatchRequest(volunteerContext, requestContext)) {
+    return null;
+  }
+
   const distanceMeters = calculateDistanceMeters(
     {
       latitude: volunteerContext.last_known_latitude,
@@ -467,6 +494,7 @@ function selectBestRequestForVolunteer(volunteer, requestRows) {
     .filter((requestRow) => requestRow.user_id === null || requestRow.user_id !== volunteer.user_id)
     .filter((requestRow) => !requestRow.is_internally_fulfilled)
     .map((requestRow) => buildRequestCandidateForVolunteer(volunteer, requestRow))
+    .filter(Boolean)
     .filter(isCandidateWithinMatchRadius)
     .sort(compareRequestCandidates)[0] || null;
 }
@@ -479,6 +507,7 @@ function selectBestVolunteerForRequest(requestRow, volunteerRows) {
   return volunteerRows
     .filter((volunteerRow) => requestRow.user_id === null || volunteerRow.user_id !== requestRow.user_id)
     .map((volunteerRow) => buildVolunteerCandidateForRequest(requestRow, volunteerRow))
+    .filter(Boolean)
     .filter(isCandidateWithinMatchRadius)
     .sort(compareVolunteerCandidates)[0] || null;
 }
@@ -533,11 +562,57 @@ async function createAssignment(volunteerId, requestId) {
   const assignmentId = makeId('asg');
   const sql = `
     INSERT INTO assignments (assignment_id, volunteer_id, request_id, assigned_at, is_cancelled)
-    VALUES ($1, $2, $3, CURRENT_TIMESTAMP, FALSE)
+    SELECT $1::VARCHAR(64), $2::VARCHAR(64), $3::VARCHAR(64), CURRENT_TIMESTAMP, FALSE
+    FROM volunteers v
+    JOIN help_requests hr ON hr.request_id = $3::VARCHAR(64)
+    WHERE v.volunteer_id = $2::VARCHAR(64)
+      AND v.is_available = TRUE
+      AND hr.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM assignments a
+        JOIN help_requests active_requests ON active_requests.request_id = a.request_id
+        WHERE a.volunteer_id = $2::VARCHAR(64)
+          AND a.is_cancelled = FALSE
+          AND active_requests.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS')
+      )
+    ON CONFLICT (volunteer_id) WHERE is_cancelled = FALSE DO NOTHING
     RETURNING *;
   `;
   const result = await query(sql, [assignmentId, volunteerId, requestId]);
-  return result.rows[0];
+  return result.rows[0] || null;
+}
+
+async function markRequestAssignedIfPending(requestId) {
+  const sql = `
+    UPDATE help_requests
+    SET status = 'ASSIGNED'
+    WHERE request_id = $1
+      AND status = 'PENDING'
+    RETURNING *;
+  `;
+  const result = await query(sql, [requestId]);
+  return result.rows[0] || null;
+}
+
+async function syncRequestStatusPreservingInProgress(requestId) {
+  const sql = `
+    UPDATE help_requests hr
+    SET status = CASE
+      WHEN hr.status = 'IN_PROGRESS' THEN 'IN_PROGRESS'::request_status
+      WHEN EXISTS (
+        SELECT 1
+        FROM assignments a
+        WHERE a.request_id = hr.request_id
+          AND a.is_cancelled = FALSE
+      ) THEN 'ASSIGNED'::request_status
+      ELSE 'PENDING'::request_status
+    END
+    WHERE hr.request_id = $1
+    RETURNING *;
+  `;
+  const result = await query(sql, [requestId]);
+  return result.rows[0] || null;
 }
 
 async function updateRequestStatus(requestId, status) {
@@ -628,6 +703,8 @@ module.exports = {
   findMatchingRequestForVolunteer,
   findMatchingVolunteerForRequest,
   createAssignment,
+  markRequestAssignedIfPending,
+  syncRequestStatusPreservingInProgress,
   updateRequestStatus,
   getAssignmentByVolunteerId,
   getAssignmentById,

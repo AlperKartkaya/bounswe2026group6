@@ -6,6 +6,8 @@ const {
   findAvailableVolunteersForMatching,
   findMatchingRequestForVolunteer,
   createAssignment,
+  markRequestAssignedIfPending,
+  syncRequestStatusPreservingInProgress,
   updateRequestStatus,
   getAssignmentByVolunteerId,
   getAssignmentById,
@@ -51,7 +53,11 @@ async function runAssignmentCycle() {
     }
 
     const assignment = await createAssignment(volunteer.volunteer_id, matchingRequest.request_id);
-    await updateRequestStatus(matchingRequest.request_id, 'ASSIGNED');
+    if (!assignment) {
+      continue;
+    }
+
+    await markRequestAssignedIfPending(matchingRequest.request_id);
     createdAssignments.push(assignment);
   }
 
@@ -59,12 +65,8 @@ async function runAssignmentCycle() {
 }
 
 async function syncRequestStatusFromAssignments(requestId) {
-  const activeAssignments = await findActiveAssignmentsByRequestId(requestId);
-  const nextStatus = activeAssignments.length > 0 ? 'ASSIGNED' : 'PENDING';
-
-  await updateRequestStatus(requestId, nextStatus);
-
-  return activeAssignments;
+  await syncRequestStatusPreservingInProgress(requestId);
+  return findActiveAssignmentsByRequestId(requestId);
 }
 
 async function setAvailability(userId, { isAvailable, latitude, longitude }) {
