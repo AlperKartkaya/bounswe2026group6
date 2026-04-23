@@ -141,6 +141,7 @@ export function LocationPicker({
             metadata?: {
                 source?: string | null;
                 accuracyMeters?: number | null;
+                capturedAt?: string | null;
             }
         ) => {
             const currentReverseRequestId = ++reverseRequestIdRef.current;
@@ -157,9 +158,9 @@ export function LocationPicker({
 
                 onChange({
                     ...toPickerValue(response.item),
-                    source: metadata?.source || "map_pin",
+                    source: metadata?.source ?? "map_pin",
                     accuracyMeters: metadata?.accuracyMeters ?? null,
-                    capturedAt: new Date().toISOString(),
+                    capturedAt: metadata?.capturedAt ?? new Date().toISOString(),
                 });
             } catch (err) {
                 if (currentReverseRequestId !== reverseRequestIdRef.current) {
@@ -169,9 +170,9 @@ export function LocationPicker({
                 setError(err instanceof Error ? err.message : "Could not resolve selected location.");
                 onChange({
                     ...toManualPickerValue(latitude, longitude),
-                    source: metadata?.source || "map_pin",
+                    source: metadata?.source ?? "map_pin",
                     accuracyMeters: metadata?.accuracyMeters ?? null,
-                    capturedAt: new Date().toISOString(),
+                    capturedAt: metadata?.capturedAt ?? new Date().toISOString(),
                 });
             } finally {
                 if (currentReverseRequestId === reverseRequestIdRef.current) {
@@ -203,6 +204,7 @@ export function LocationPicker({
                                 typeof position.coords.accuracy === "number"
                                     ? position.coords.accuracy
                                     : null,
+                            capturedAt: new Date(position.timestamp).toISOString(),
                         }
                     );
                 },

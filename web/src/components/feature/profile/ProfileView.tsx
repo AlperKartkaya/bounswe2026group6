@@ -52,6 +52,25 @@ type ProfileData = EditableProfileData & {
     allergiesVerified: boolean;
 };
 
+const FRESH_DEVICE_CAPTURE_MAX_AGE_MS = 5 * 60 * 1000;
+
+function isFreshCurrentDeviceSelection(value: LocationPickerValue | null) {
+    if (!value || value.source !== "current_device") {
+        return false;
+    }
+
+    if (!value.capturedAt) {
+        return false;
+    }
+
+    const capturedAtMs = Date.parse(value.capturedAt);
+    if (Number.isNaN(capturedAtMs)) {
+        return false;
+    }
+
+    return Date.now() - capturedAtMs <= FRESH_DEVICE_CAPTURE_MAX_AGE_MS;
+}
+
 
 function toProfileData(
     backendProfile: BackendProfileResponse,
@@ -97,6 +116,8 @@ export default function ProfileView() {
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState("");
     const [info, setInfo] = React.useState("");
+    const [initialShareLocation, setInitialShareLocation] =
+        React.useState(false);
     const [emptyStateAction, setEmptyStateAction] =
         React.useState<EmptyStateAction>(null);
 
@@ -120,16 +141,16 @@ export default function ProfileView() {
                 ) {
                     setLocationPickerValue({
                         placeId:
-                            backendProfile.locationProfile.placeId ||
+                            backendProfile.locationProfile.placeId ??
                             "profile:location",
                         displayName:
-                            backendProfile.locationProfile.displayAddress ||
-                            [
+                            backendProfile.locationProfile.displayAddress ??
+                            ([
                                 backendProfile.locationProfile.city,
                                 backendProfile.locationProfile.country,
                             ]
                                 .filter(Boolean)
-                                .join(", ") || "Current profile location",
+                                .join(", ") || "Current profile location"),
                         latitude: backendProfile.locationProfile.latitude,
                         longitude: backendProfile.locationProfile.longitude,
                         administrative: {
@@ -139,17 +160,17 @@ export default function ProfileView() {
                             neighborhood: refreshedProfile.neighborhood,
                             extraAddress: refreshedProfile.extraAddress,
                             postalCode:
-                                backendProfile.locationProfile.administrative?.postalCode ||
+                                backendProfile.locationProfile.administrative?.postalCode ??
                                 null,
                         },
                         source:
-                            backendProfile.locationProfile.coordinate?.source ||
+                            backendProfile.locationProfile.coordinate?.source ??
                             "profile_saved",
                         capturedAt:
-                            backendProfile.locationProfile.coordinate?.capturedAt ||
+                            backendProfile.locationProfile.coordinate?.capturedAt ??
                             backendProfile.locationProfile.lastUpdated,
                         accuracyMeters:
-                            backendProfile.locationProfile.coordinate?.accuracyMeters ||
+                            backendProfile.locationProfile.coordinate?.accuracyMeters ??
                             null,
                     });
                 }
@@ -193,22 +214,25 @@ export default function ProfileView() {
                 );
 
                 setProfile(mappedProfile);
+                setInitialShareLocation(
+                    backendProfile.privacySettings.locationSharingEnabled
+                );
                 if (
                     backendProfile.locationProfile.latitude !== null &&
                     backendProfile.locationProfile.longitude !== null
                 ) {
                     setLocationPickerValue({
                         placeId:
-                            backendProfile.locationProfile.placeId ||
+                            backendProfile.locationProfile.placeId ??
                             "profile:location",
                         displayName:
-                            backendProfile.locationProfile.displayAddress ||
-                            [
+                            backendProfile.locationProfile.displayAddress ??
+                            ([
                                 backendProfile.locationProfile.city,
                                 backendProfile.locationProfile.country,
                             ]
                                 .filter(Boolean)
-                                .join(", ") || "Current profile location",
+                                .join(", ") || "Current profile location"),
                         latitude: backendProfile.locationProfile.latitude,
                         longitude: backendProfile.locationProfile.longitude,
                         administrative: {
@@ -218,17 +242,17 @@ export default function ProfileView() {
                             neighborhood: mappedProfile.neighborhood,
                             extraAddress: mappedProfile.extraAddress,
                             postalCode:
-                                backendProfile.locationProfile.administrative?.postalCode ||
+                                backendProfile.locationProfile.administrative?.postalCode ??
                                 null,
                         },
                         source:
-                            backendProfile.locationProfile.coordinate?.source ||
+                            backendProfile.locationProfile.coordinate?.source ??
                             "profile_saved",
                         capturedAt:
-                            backendProfile.locationProfile.coordinate?.capturedAt ||
+                            backendProfile.locationProfile.coordinate?.capturedAt ??
                             backendProfile.locationProfile.lastUpdated,
                         accuracyMeters:
-                            backendProfile.locationProfile.coordinate?.accuracyMeters ||
+                            backendProfile.locationProfile.coordinate?.accuracyMeters ??
                             null,
                     });
                 }
@@ -335,6 +359,17 @@ export default function ProfileView() {
             return;
         }
 
+        if (
+            !initialShareLocation &&
+            profile.shareLocation &&
+            !isFreshCurrentDeviceSelection(locationPickerValue)
+        ) {
+            setError(
+                "To enable Share Current Location, click Use Current Location first so we can save a fresh device location."
+            );
+            return;
+        }
+
         const token = getAccessToken();
 
         if (!token) {
@@ -424,8 +459,8 @@ export default function ProfileView() {
                 longitude: hasCoordinateSelection
                     ? locationPickerValue.longitude
                     : undefined,
-                displayAddress: locationPickerValue?.displayName || undefined,
-                placeId: locationPickerValue?.placeId || undefined,
+                displayAddress: locationPickerValue?.displayName ?? undefined,
+                placeId: locationPickerValue?.placeId ?? undefined,
                 administrative: {
                     countryCode: resolvedCountryCode,
                     country: resolvedCountryLabel,
@@ -433,16 +468,16 @@ export default function ProfileView() {
                     district: districtLabel || null,
                     neighborhood: neighborhoodLabel || null,
                     extraAddress: resolvedExtraAddress || null,
-                    postalCode: locationPickerValue?.administrative.postalCode || null,
+                    postalCode: locationPickerValue?.administrative.postalCode ?? null,
                 },
                 coordinate: hasCoordinateSelection
                     ? {
                         latitude: locationPickerValue.latitude,
                         longitude: locationPickerValue.longitude,
                         accuracyMeters: locationPickerValue.accuracyMeters ?? null,
-                        source: locationPickerValue.source || "profile_form",
+                        source: locationPickerValue.source ?? "profile_form",
                         capturedAt:
-                            locationPickerValue.capturedAt ||
+                            locationPickerValue.capturedAt ??
                             new Date().toISOString(),
                     }
                     : undefined,
