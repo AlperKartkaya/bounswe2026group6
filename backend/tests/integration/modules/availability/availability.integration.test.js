@@ -95,7 +95,7 @@ async function seedHelpRequest(requestId, userId, options = {}) {
   const {
     needType = 'general',
     helpTypes = [needType],
-    affectedPeopleCount = null,
+    affectedPeopleCount = 1,
     latitude = null,
     longitude = null,
     createdAt = '2026-04-23T08:00:00.000Z',
@@ -398,7 +398,7 @@ describe('Availability integration', () => {
     expect(statusResult.rows[0].status).toBe('ASSIGNED');
   });
 
-  test('tryToAssignRequest keeps SAR requests with no affectedPeopleCount at the initial single responder', async () => {
+  test('tryToAssignRequest uses the schema default affectedPeopleCount of 1 when SAR count is omitted', async () => {
     await seedActiveUser('user_r_sar_single', 'sar-single@example.com');
     await seedHelpRequest('req_sar_single', 'user_r_sar_single', {
       needType: 'fire_brigade',
@@ -419,7 +419,13 @@ describe('Availability integration', () => {
     const assigned = await tryToAssignRequest('req_sar_single');
 
     expect(assigned).toBe(true);
-    expect(await listAssignedVolunteerIds('req_sar_single')).toHaveLength(1);
+    expect(await listAssignedVolunteerIds('req_sar_single')).toHaveLength(2);
+
+    const requestResult = await query(
+      'SELECT affected_people_count FROM help_requests WHERE request_id = $1',
+      ['req_sar_single'],
+    );
+    expect(requestResult.rows[0].affected_people_count).toBe(1);
   });
 
   test('tryToAssignRequest fulfills first aid + SAR requests with a first-aid-capable responder when available from the start', async () => {
@@ -483,6 +489,43 @@ describe('Availability integration', () => {
     expect(await listAssignedVolunteerIds('req_fa_sar_late')).toEqual(['vol_fa_late', 'vol_general_late']);
   });
 
+  test('tryToAssignRequest does not reuse a volunteer who is already assigned to an IN_PROGRESS request', async () => {
+    await seedActiveUser('user_r_in_progress_busy', 'in-progress-busy@example.com');
+    await seedHelpRequest('req_in_progress_busy', 'user_r_in_progress_busy', {
+      needType: 'food',
+      helpTypes: ['food'],
+    });
+
+    await seedActiveUser('user_r_in_progress_open', 'in-progress-open@example.com');
+    await seedHelpRequest('req_in_progress_open', 'user_r_in_progress_open', {
+      needType: 'water',
+      helpTypes: ['water'],
+      createdAt: '2026-04-23T08:10:00.000Z',
+    });
+
+    await seedActiveUser('user_vol_in_progress_busy', 'vol-in-progress-busy@example.com');
+    await seedVolunteer({ volunteerId: 'vol_in_progress_busy', userId: 'user_vol_in_progress_busy', isAvailable: true });
+
+    await query(
+      `
+        INSERT INTO assignments (assignment_id, volunteer_id, request_id, assigned_at, is_cancelled)
+        VALUES ('asg_in_progress_busy', 'vol_in_progress_busy', 'req_in_progress_busy', CURRENT_TIMESTAMP, FALSE);
+      `,
+    );
+    await query(
+      `
+        UPDATE help_requests
+        SET status = 'IN_PROGRESS'
+        WHERE request_id = 'req_in_progress_busy';
+      `,
+    );
+
+    const assigned = await tryToAssignRequest('req_in_progress_open');
+
+    expect(assigned).toBe(false);
+    expect(await listAssignedVolunteerIds('req_in_progress_open')).toEqual([]);
+  });
+
   test('a first-aid-only request that started with a general fallback adds a first-aid-capable volunteer later', async () => {
     const app = createTestApp();
 
@@ -511,6 +554,48 @@ describe('Availability integration', () => {
     expect(response.status).toBe(200);
     expect(response.body.assignment.request_id).toBe('req_fa_only_late');
     expect(await listAssignedVolunteerIds('req_fa_only_late')).toEqual(['vol_fa_only_late', 'vol_general_fa_only']);
+  });
+
+  test('an IN_PROGRESS first aid + SAR request can still receive a later first-aid-capable follow-up', async () => {
+    const app = createTestApp();
+
+    await seedActiveUser('user_r_fa_sar_progress', 'fasarprogress@example.com');
+    await seedHelpRequest('req_fa_sar_progress', 'user_r_fa_sar_progress', {
+      needType: 'first_aid',
+      helpTypes: ['first_aid', 'fire_brigade'],
+      affectedPeopleCount: 1,
+    });
+
+    await seedActiveUser('user_vol_general_progress', 'general-progress@example.com');
+    await seedVolunteer({ volunteerId: 'vol_general_progress', userId: 'user_vol_general_progress', isAvailable: true });
+
+    await tryToAssignRequest('req_fa_sar_progress');
+    expect(await listAssignedVolunteerIds('req_fa_sar_progress')).toEqual(['vol_general_progress']);
+
+    await query(
+      `
+        UPDATE help_requests
+        SET status = 'IN_PROGRESS'
+        WHERE request_id = 'req_fa_sar_progress';
+      `,
+    );
+
+    await seedActiveUser('user_vol_fa_progress', 'fa-progress@example.com');
+    await seedVolunteer({ volunteerId: 'vol_fa_progress', userId: 'user_vol_fa_progress', isAvailable: false });
+    await seedVolunteerProfile('user_vol_fa_progress', '["First Aid"]');
+
+    const response = await request(app)
+      .post('/api/availability/toggle')
+      .set('Authorization', `Bearer ${buildAuthToken('user_vol_fa_progress')}`)
+      .send({ isAvailable: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.assignment.request_id).toBe('req_fa_sar_progress');
+
+    const assignedVolunteerIds = await listAssignedVolunteerIds('req_fa_sar_progress');
+    expect(assignedVolunteerIds).toHaveLength(2);
+    expect(assignedVolunteerIds).toContain('vol_general_progress');
+    expect(assignedVolunteerIds).toContain('vol_fa_progress');
   });
 
   test('minimum first coverage happens before SAR expansion across simultaneous requests', async () => {

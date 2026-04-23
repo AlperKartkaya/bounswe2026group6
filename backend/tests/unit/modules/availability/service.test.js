@@ -240,6 +240,46 @@ describe('Availability Service', () => {
   });
 
   describe('tryToAssignRequest', () => {
+    it('prioritizes first-aid-capable volunteers before general volunteers during matching', async () => {
+      repository.findAvailableVolunteersForMatching.mockResolvedValue([
+        {
+          volunteer_id: 'vol_general',
+          user_id: 'user_general',
+          is_available: true,
+          is_first_aid_capable: false,
+          location_updated_at: '2026-04-23T08:10:00.000Z',
+        },
+        {
+          volunteer_id: 'vol_specialist',
+          user_id: 'user_specialist',
+          is_available: true,
+          is_first_aid_capable: true,
+          location_updated_at: '2026-04-23T08:00:00.000Z',
+        },
+      ]);
+      repository.findMatchingRequestForVolunteer.mockImplementation(async (volunteerId) => (
+        volunteerId === 'vol_specialist' ? { request_id: 'req_123' } : null
+      ));
+      repository.createAssignment.mockResolvedValue({
+        assignment_id: 'asg_123',
+        volunteer_id: 'vol_specialist',
+        request_id: 'req_123',
+      });
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([
+        {
+          assignment_id: 'asg_123',
+          volunteer_id: 'vol_specialist',
+          request_id: 'req_123',
+        },
+      ]);
+
+      const result = await tryToAssignRequest('req_123');
+
+      expect(repository.findMatchingRequestForVolunteer).toHaveBeenNthCalledWith(1, 'vol_specialist');
+      expect(repository.createAssignment).toHaveBeenCalledWith('vol_specialist', 'req_123');
+      expect(result).toBe(true);
+    });
+
     it('should assign volunteers through the assignment cycle and report success for the target request', async () => {
       repository.findAvailableVolunteersForMatching.mockResolvedValue([{ ...volunteer, is_available: true }]);
       repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_123' });

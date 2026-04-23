@@ -380,7 +380,7 @@ async function findAvailableVolunteersForMatching() {
         JOIN help_requests hr ON a.request_id = hr.request_id
         WHERE a.volunteer_id = v.volunteer_id
           AND a.is_cancelled = FALSE
-          AND hr.status IN ('PENDING', 'ASSIGNED')
+          AND hr.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS')
       )
     ORDER BY v.location_updated_at DESC NULLS LAST, v.volunteer_id ASC;
   `;
@@ -405,7 +405,7 @@ async function findActiveAssignmentsForOpenRequests() {
       WHERE e.profile_id = up.profile_id
     ) expertise_context ON TRUE
     WHERE a.is_cancelled = FALSE
-      AND hr.status IN ('PENDING', 'ASSIGNED')
+      AND hr.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS')
     ORDER BY a.assigned_at ASC, a.assignment_id ASC;
   `;
   const result = await query(sql);
@@ -453,7 +453,7 @@ async function findOpenRequestsForMatching() {
     SELECT hr.*, rl.latitude, rl.longitude
     FROM help_requests hr
     LEFT JOIN request_locations rl ON hr.request_id = rl.request_id
-    WHERE hr.status IN ('PENDING', 'ASSIGNED')
+    WHERE hr.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS')
     ORDER BY hr.created_at ASC, hr.request_id ASC;
   `;
   const requestResult = await query(requestSql);

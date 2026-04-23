@@ -15,9 +15,35 @@ const {
 
 async function runAssignmentCycle() {
   const availableVolunteers = await findAvailableVolunteersForMatching();
+  const sortedVolunteers = [...availableVolunteers].sort((leftVolunteer, rightVolunteer) => {
+    if (leftVolunteer.is_first_aid_capable !== rightVolunteer.is_first_aid_capable) {
+      return leftVolunteer.is_first_aid_capable ? -1 : 1;
+    }
+
+    const leftUpdatedAt = leftVolunteer.location_updated_at
+      ? new Date(leftVolunteer.location_updated_at).getTime()
+      : null;
+    const rightUpdatedAt = rightVolunteer.location_updated_at
+      ? new Date(rightVolunteer.location_updated_at).getTime()
+      : null;
+
+    if (leftUpdatedAt === null && rightUpdatedAt !== null) {
+      return 1;
+    }
+
+    if (leftUpdatedAt !== null && rightUpdatedAt === null) {
+      return -1;
+    }
+
+    if (leftUpdatedAt !== rightUpdatedAt) {
+      return (rightUpdatedAt || 0) - (leftUpdatedAt || 0);
+    }
+
+    return leftVolunteer.volunteer_id.localeCompare(rightVolunteer.volunteer_id);
+  });
   const createdAssignments = [];
 
-  for (const volunteer of availableVolunteers) {
+  for (const volunteer of sortedVolunteers) {
     const matchingRequest = await findMatchingRequestForVolunteer(volunteer.volunteer_id);
 
     if (!matchingRequest) {
