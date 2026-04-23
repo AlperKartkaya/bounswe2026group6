@@ -50,6 +50,8 @@ export default function AdminEmergencyOverviewView() {
         async (includeRegion: boolean, mode: "initial" | "refresh" = "refresh") => {
             const token = getAccessToken();
             if (!token) {
+                setLoading(false);
+                setRefreshing(false);
                 redirectToLogin();
                 return;
             }
@@ -115,6 +117,23 @@ export default function AdminEmergencyOverviewView() {
         },
         [redirectToLogin, router]
     );
+
+    React.useEffect(() => {
+        if (!loading) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setLoading(false);
+            setInitialError((currentError) =>
+                currentError || "Request timed out. Please try again."
+            );
+        }, 16_000);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [loading]);
 
     React.useEffect(() => {
         const mode = isFirstLoadRef.current ? "initial" : "refresh";

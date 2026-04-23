@@ -11,10 +11,15 @@ const { loginThroughUi } = require('./helpers/ui');
 async function ensureOverviewReady(page) {
   const retryButton = page.getByRole('button', { name: 'Retry' });
   const loadRegionButton = page.getByRole('button', { name: 'Load Region Summary' });
+  const hideRegionButton = page.getByRole('button', { name: 'Hide Region Summary' });
   const deadline = Date.now() + 20_000;
 
   while (Date.now() < deadline) {
     if (await loadRegionButton.isVisible().catch(() => false)) {
+      return;
+    }
+
+    if (await hideRegionButton.isVisible().catch(() => false)) {
       return;
     }
 
@@ -70,10 +75,15 @@ test('authenticated admin can open dashboard and toggle region summary', async (
   await expect(page.getByRole('heading', { name: 'Admin Dashboard' })).toBeVisible();
   await ensureOverviewReady(page);
 
+  const loadRegionButton = page.getByRole('button', { name: 'Load Region Summary' });
+  const hideRegionButton = page.getByRole('button', { name: 'Hide Region Summary' });
+
   await expect(page.getByRole('columnheader', { name: 'City' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Load Region Summary' }).click();
+  if (await loadRegionButton.isVisible().catch(() => false)) {
+    await loadRegionButton.click();
+  }
   await expect(page.getByRole('columnheader', { name: 'City' })).toBeVisible();
-  await page.getByRole('button', { name: 'Hide Region Summary' }).click();
+  await hideRegionButton.click();
   await expect(page.getByRole('columnheader', { name: 'City' })).toHaveCount(0);
 
   // keep variable usage explicit for lint/readability in CI logs
@@ -118,8 +128,10 @@ test('initial overview fetch error can be retried successfully', async ({ page }
   await loginThroughUi(page, { email, password });
 
   let failUntilRetried = true;
+  let initialFailCount = 0;
   await page.route('**/api/admin/emergency-overview*', async (route) => {
-    if (failUntilRetried) {
+    if (failUntilRetried && initialFailCount < 2) {
+      initialFailCount += 1;
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -132,6 +144,7 @@ test('initial overview fetch error can be retried successfully', async ({ page }
   });
 
   await page.goto('/admin');
+  await expect.poll(() => initialFailCount, { timeout: 20_000 }).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Retry' }).waitFor({ state: 'visible', timeout: 20_000 });
   failUntilRetried = false;
   await page.getByRole('button', { name: 'Retry' }).click();
