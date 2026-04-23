@@ -17,7 +17,7 @@ const navItemsOrdered = [
     { label: "Privacy & Security", href: "/privacy-security" },
 ];
 
-const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers"]);
+const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers", "/gathering-areas"]);
 
 export function TopNavbar() {
     const router = useRouter();

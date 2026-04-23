@@ -40,11 +40,23 @@ test('verified user can log in through a protected redirect, update privacy sett
   await expect(page.getByText('Profile updated successfully.')).toBeVisible();
 
   const accessToken = await getStoredAccessToken(page);
-  const profile = await fetchMyProfile(accessToken);
+  await expect
+    .poll(async () => {
+      const profile = await fetchMyProfile(accessToken);
 
-  expect(profile.physicalInfo.height).toBe(180);
-  expect(profile.locationProfile.address).toContain('Updated Address 42');
-  expect(profile.privacySettings.locationSharingEnabled).toBe(true);
+      return {
+        height: profile.physicalInfo.height,
+        address: profile.locationProfile.address,
+        locationSharingEnabled: profile.privacySettings.locationSharingEnabled,
+      };
+    })
+    .toMatchObject({
+      height: 180,
+      locationSharingEnabled: true,
+    });
+
+  const refreshedProfile = await fetchMyProfile(accessToken);
+  expect(refreshedProfile.locationProfile.address).toContain('Updated Address 42');
 
   await page.getByRole('button', { name: 'Open user menu' }).click();
   await page.getByRole('button', { name: 'Logout' }).click();
