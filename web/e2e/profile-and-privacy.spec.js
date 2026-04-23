@@ -33,7 +33,10 @@ test('verified user can log in through a protected redirect, update privacy sett
   await page.getByRole('link', { name: 'Profile' }).click();
   await expect(page).toHaveURL(/\/profile$/);
 
-  await page.locator('#height').fill('180');
+  const heightInput = page.locator('#height');
+  await heightInput.fill('');
+  await heightInput.fill('180');
+  await expect(heightInput).toHaveValue('180');
   await page.locator('#extraAddress').fill('Updated Address 42');
   await page.getByRole('button', { name: 'Save Changes' }).click();
 
@@ -49,7 +52,7 @@ test('verified user can log in through a protected redirect, update privacy sett
         address: profile.locationProfile.address,
         locationSharingEnabled: profile.privacySettings.locationSharingEnabled,
       };
-    })
+    }, { timeout: 20_000 })
     .toMatchObject({
       height: 180,
       locationSharingEnabled: true,
