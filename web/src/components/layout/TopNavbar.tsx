@@ -11,6 +11,7 @@ const navItemsOrdered = [
     { label: "Home", href: "/home" },
     { label: "News", href: "/news" },
     { label: "Emergency Numbers", href: "/emergency-numbers" },
+    { label: "Gathering Areas", href: "/gathering-areas" },
     { label: "Admin", href: "/admin", requiresAdmin: true },
     { label: "Profile", href: "/profile" },
     { label: "Privacy & Security", href: "/privacy-security" },
