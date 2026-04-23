@@ -15,6 +15,7 @@ const DEFAULT_CENTER = {
 
 const DEFAULT_RADIUS = 2000;
 const DEFAULT_LIMIT = 20;
+type FetchState = "idle" | "loading" | "success" | "empty" | "error";
 
 function mapFeature(feature: GatheringAreaFeature): GatheringAreaMapFeature | null {
     const [longitude, latitude] = feature.geometry.coordinates;
@@ -43,9 +44,10 @@ export default function GatheringAreasPage() {
     const [areas, setAreas] = React.useState<GatheringAreaMapFeature[]>([]);
     const [selectedAreaId, setSelectedAreaId] = React.useState<string | null>(null);
     const [isDetailsOpen, setIsDetailsOpen] = React.useState(true);
-    const [loading, setLoading] = React.useState(false);
+    const [fetchState, setFetchState] = React.useState<FetchState>("idle");
+    const [resolvingLocation, setResolvingLocation] = React.useState(true);
     const [error, setError] = React.useState("");
-    const [locationNote, setLocationNote] = React.useState("");
+    const [locationNote, setLocationNote] = React.useState("Resolving your current location...");
     const requestIdRef = React.useRef(0);
 
     const handleSelectArea = React.useCallback((featureId: string) => {
@@ -58,7 +60,7 @@ export default function GatheringAreasPage() {
             const currentRequestId = ++requestIdRef.current;
 
             try {
-                setLoading(true);
+                setFetchState("loading");
                 setError("");
 
                 const response = await fetchNearbyGatheringAreas({
@@ -77,6 +79,7 @@ export default function GatheringAreasPage() {
                     .filter((item): item is GatheringAreaMapFeature => item !== null);
 
                 setAreas(mapped);
+                setFetchState(mapped.length ? "success" : "empty");
                 setSelectedAreaId((current) => {
                     if (!mapped.length) {
                         return null;
@@ -106,25 +109,30 @@ export default function GatheringAreasPage() {
                 setError(uiMessage);
                 setAreas([]);
                 setSelectedAreaId(null);
+                setFetchState("error");
             } finally {
-                if (currentRequestId === requestIdRef.current) {
-                    setLoading(false);
+                if (currentRequestId !== requestIdRef.current) {
+                    return;
                 }
             }
         },
         []
     );
 
-    const resolveCurrentLocation = React.useCallback(() => {
+    const resolveCurrentLocationAndLoad = React.useCallback(() => {
+        setResolvingLocation(true);
+
         if (!navigator.geolocation) {
             setLocationNote(
                 "Current location is not supported in this browser. Showing nearby areas around Istanbul."
             );
+            setCenter(DEFAULT_CENTER);
+            setResolvingLocation(false);
             void loadNearbyAreas(DEFAULT_CENTER);
             return;
         }
 
-        setLocationNote("");
+        setLocationNote("Resolving your current location...");
 
         navigator.geolocation.getCurrentPosition(
             (position) => {
@@ -135,6 +143,7 @@ export default function GatheringAreasPage() {
 
                 setCenter(nextCenter);
                 setLocationNote("Showing gathering areas around your current location.");
+                setResolvingLocation(false);
                 void loadNearbyAreas(nextCenter);
             },
             () => {
@@ -142,6 +151,7 @@ export default function GatheringAreasPage() {
                     "Location permission was denied or unavailable. Showing nearby areas around Istanbul."
                 );
                 setCenter(DEFAULT_CENTER);
+                setResolvingLocation(false);
                 void loadNearbyAreas(DEFAULT_CENTER);
             },
             {
@@ -152,8 +162,13 @@ export default function GatheringAreasPage() {
     }, [loadNearbyAreas]);
 
     React.useEffect(() => {
-        resolveCurrentLocation();
-    }, [resolveCurrentLocation]);
+        resolveCurrentLocationAndLoad();
+    }, [resolveCurrentLocationAndLoad]);
+
+    const isInitialState = resolvingLocation && fetchState === "idle";
+    const isLoading = fetchState === "loading";
+    const isError = fetchState === "error";
+    const isEmpty = fetchState === "empty";
 
     const selectedArea =
         areas.find((item) => item.featureKey === selectedAreaId) ||
@@ -185,8 +200,8 @@ export default function GatheringAreasPage() {
                             aria-label="Retry Results"
                             title="Retry Results"
                             className="gathering-areas-map-retry"
-                            onClick={() => void loadNearbyAreas(center)}
-                            disabled={loading}
+                            onClick={resolveCurrentLocationAndLoad}
+                                                        disabled={isLoading || resolvingLocation}
                         >
                             <svg
                                 width="16"
@@ -240,7 +255,11 @@ export default function GatheringAreasPage() {
                                 <p className="gathering-areas-overlay-title">Nearby Results</p>
 
                                 <div className="gathering-areas-list">
-                                    {areas.length ? (
+                                    {isError ? (
+                                        <p className="gathering-areas-empty-detail">
+                                            Could not load nearby results.
+                                        </p>
+                                    ) : areas.length ? (
                                         areas.map((area) => (
                                             <button
                                                 key={area.featureKey}
@@ -254,9 +273,13 @@ export default function GatheringAreasPage() {
                                                 </p>
                                             </button>
                                         ))
-                                    ) : (
+                                    ) : isEmpty ? (
                                         <p className="gathering-areas-empty-detail">
                                             No nearby areas in the current result.
+                                        </p>
+                                    ) : (
+                                        <p className="gathering-areas-empty-detail">
+                                            Waiting for location and nearby results...
                                         </p>
                                     )}
                                 </div>
@@ -264,7 +287,7 @@ export default function GatheringAreasPage() {
                         ) : null}
                     </div>
 
-                    {loading ? (
+                    {isLoading ? (
                         <div className="gathering-areas-status-box">
                             <p>Loading nearby gathering areas...</p>
                         </div>
@@ -276,9 +299,15 @@ export default function GatheringAreasPage() {
                         </div>
                     ) : null}
 
-                    {!loading && !error && areas.length === 0 ? (
+                    {isEmpty ? (
                         <div className="gathering-areas-status-box">
                             <p>No gathering areas were found for this location and radius.</p>
+                        </div>
+                    ) : null}
+
+                    {isInitialState ? (
+                        <div className="gathering-areas-status-box">
+                            <p>Waiting for your location before first fetch.</p>
                         </div>
                     ) : null}
                 </SectionCard>
