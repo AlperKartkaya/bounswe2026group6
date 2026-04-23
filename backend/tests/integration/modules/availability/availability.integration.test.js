@@ -603,6 +603,44 @@ describe('Availability integration', () => {
     expect(await listAssignedVolunteerIds('req_fa_only_late')).toEqual(['vol_general_fa_only', 'vol_fa_only_late']);
   });
 
+  test('a first-aid-capable volunteer backfills an existing first-aid fallback before taking a fresh uncovered request', async () => {
+    const app = createTestApp();
+
+    await seedActiveUser('user_r_fa_backfill', 'fa-backfill@example.com');
+    await seedHelpRequest('req_fa_backfill', 'user_r_fa_backfill', {
+      needType: 'first_aid',
+      helpTypes: ['first_aid'],
+      createdAt: '2026-04-23T08:00:00.000Z',
+    });
+
+    await seedActiveUser('user_r_general_fresh', 'general-fresh@example.com');
+    await seedHelpRequest('req_general_fresh', 'user_r_general_fresh', {
+      needType: 'food',
+      helpTypes: ['food'],
+      createdAt: '2026-04-23T08:10:00.000Z',
+    });
+
+    await seedActiveUser('user_vol_general_backfill', 'general-backfill@example.com');
+    await seedVolunteer({ volunteerId: 'vol_general_backfill', userId: 'user_vol_general_backfill', isAvailable: true });
+
+    await tryToAssignRequest('req_fa_backfill');
+    expect(await listAssignedVolunteerIds('req_fa_backfill')).toEqual(['vol_general_backfill']);
+
+    await seedActiveUser('user_vol_fa_priority', 'fa-priority@example.com');
+    await seedVolunteer({ volunteerId: 'vol_fa_priority', userId: 'user_vol_fa_priority', isAvailable: false });
+    await seedVolunteerProfile('user_vol_fa_priority', '["First Aid"]');
+
+    const response = await request(app)
+      .post('/api/availability/toggle')
+      .set('Authorization', `Bearer ${buildAuthToken('user_vol_fa_priority')}`)
+      .send({ isAvailable: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.assignment.request_id).toBe('req_fa_backfill');
+    expect(await listAssignedVolunteerIds('req_fa_backfill')).toEqual(['vol_general_backfill', 'vol_fa_priority']);
+    expect(await listAssignedVolunteerIds('req_general_fresh')).toEqual([]);
+  });
+
   test('an IN_PROGRESS first aid + SAR request can still receive a later first-aid-capable follow-up', async () => {
     const app = createTestApp();
 
@@ -763,9 +801,7 @@ describe('Availability integration', () => {
     expect(await listAssignedVolunteerIds('req_sar_radius')).toEqual(['vol_near_radius']);
   });
 
-  test('expansion order stays deterministic with stable request tie-breaking', async () => {
-    const app = createTestApp();
-
+  test('tryToAssignRequest stays request-scoped and does not assign unrelated requests', async () => {
     await seedActiveUser('user_r_det_a', 'det-a@example.com');
     await seedActiveUser('user_r_det_b', 'det-b@example.com');
     await seedHelpRequest('req_a', 'user_r_det_a', {
@@ -788,19 +824,8 @@ describe('Availability integration', () => {
 
     await tryToAssignRequest('req_a');
 
-    expect(await listAssignedVolunteerIds('req_a')).toHaveLength(1);
-    expect(await listAssignedVolunteerIds('req_b')).toHaveLength(1);
-
-    await seedActiveUser('user_vol_det_3', 'det-3@example.com');
-    const response = await request(app)
-      .post('/api/availability/toggle')
-      .set('Authorization', `Bearer ${buildAuthToken('user_vol_det_3')}`)
-      .send({ isAvailable: true });
-
-    expect(response.status).toBe(200);
-    expect(response.body.assignment.request_id).toBe('req_a');
     expect(await listAssignedVolunteerIds('req_a')).toHaveLength(2);
-    expect(await listAssignedVolunteerIds('req_b')).toHaveLength(1);
+    expect(await listAssignedVolunteerIds('req_b')).toHaveLength(0);
   });
 
   test('POST /api/availability/sync stores multiple records', async () => {
@@ -881,7 +906,7 @@ describe('Availability integration', () => {
     expect(['PENDING', 'ASSIGNED']).toContain(rResult.rows[0].status);
   });
 
-  test('POST /api/availability/assignments/resolve resolves request', async () => {
+  test('POST /api/availability/assignments/resolve only resolves the volunteer assignment and leaves the request open', async () => {
     const app = createTestApp();
     const volunteerUserId = 'user_v_4';
     const requesterUserId = 'user_r_4';
@@ -901,9 +926,18 @@ describe('Availability integration', () => {
       .send({ requestId: 'req_4' });
 
     expect(response.status).toBe(200);
+    expect(response.body.newAssignment).toBeNull();
 
     const rResult = await query('SELECT status FROM help_requests WHERE request_id = $1', ['req_4']);
-    expect(rResult.rows[0].status).toBe('RESOLVED');
+    expect(rResult.rows[0].status).toBe('PENDING');
+
+    const statusResponse = await request(app)
+      .get('/api/availability/status')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(statusResponse.status).toBe(200);
+    expect(statusResponse.body.isAvailable).toBe(false);
+    expect(statusResponse.body.assignment).toBeNull();
   });
 
   test('cancelling one responder on a multi-responder SAR request rematches another volunteer and keeps the request assigned', async () => {
@@ -979,7 +1013,7 @@ describe('Availability integration', () => {
     expect(thirdStatus.body.assignment.request_id).toBe('req_multi_cancel');
   });
 
-  test('resolving a multi-responder request removes sibling assignments', async () => {
+  test('resolving one assignment on a multi-responder request keeps sibling assignments active', async () => {
     const app = createTestApp();
 
     await seedActiveUser('user_req_multi_resolve', 'req-multi-resolve@example.com');
@@ -1014,12 +1048,29 @@ describe('Availability integration', () => {
       .send({ requestId: 'req_multi_resolve' });
 
     expect(response.status).toBe(200);
+    expect(response.body.newAssignment).toBeNull();
 
     const remainingAssignments = await query(
       'SELECT * FROM assignments WHERE request_id = $1 AND is_cancelled = FALSE',
       ['req_multi_resolve'],
     );
-    expect(remainingAssignments.rows).toHaveLength(0);
+    expect(remainingAssignments.rows).toHaveLength(1);
+
+    const requestStatus = await query('SELECT status FROM help_requests WHERE request_id = $1', ['req_multi_resolve']);
+    expect(requestStatus.rows[0].status).toBe('ASSIGNED');
+
+    const firstStatus = await request(app)
+      .get('/api/availability/status')
+      .set('Authorization', `Bearer ${firstToken}`);
+    expect(firstStatus.status).toBe(200);
+    expect(firstStatus.body.isAvailable).toBe(false);
+    expect(firstStatus.body.assignment).toBeNull();
+
+    const secondStatus = await request(app)
+      .get('/api/availability/status')
+      .set('Authorization', `Bearer ${secondToken}`);
+    expect(secondStatus.status).toBe(200);
+    expect(secondStatus.body.assignment.request_id).toBe('req_multi_resolve');
   });
 
   test('GET /api/availability/status returns current availability and assignment', async () => {

@@ -533,6 +533,20 @@ async function findMatchingRequestForVolunteer(volunteerId) {
   if (!volunteer) return null;
 
   const openRequests = await findOpenRequestsForMatching();
+
+  if (volunteer.is_first_aid_capable) {
+    const specialistFollowUpRequest = selectBestRequestForVolunteer(
+      volunteer,
+      openRequests.filter(
+        (requestRow) => requestRow.needs_first_aid_specialist && !requestRow.needs_initial_coverage,
+      ),
+    );
+
+    if (specialistFollowUpRequest) {
+      return specialistFollowUpRequest;
+    }
+  }
+
   const firstPassRequest = selectBestRequestForVolunteer(
     volunteer,
     openRequests.filter((requestRow) => requestRow.needs_initial_coverage),

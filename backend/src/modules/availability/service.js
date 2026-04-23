@@ -5,10 +5,10 @@ const {
   createAvailabilityRecord,
   findAvailableVolunteersForMatching,
   findMatchingRequestForVolunteer,
+  findMatchingVolunteerForRequest,
   createAssignment,
   markRequestAssignedIfPending,
   syncRequestStatusPreservingInProgress,
-  updateRequestStatus,
   getAssignmentByVolunteerId,
   getAssignmentById,
   findActiveAssignmentsByRequestId,
@@ -226,20 +226,22 @@ async function resolveMyAssignment(userId, { requestId }) {
     throw error;
   }
 
-  await updateRequestStatus(requestId, 'RESOLVED');
+  await cancelAssignment(assignment.assignment_id);
+  await syncRequestStatusFromAssignments(requestId);
 
-  const activeAssignments = await findActiveAssignmentsByRequestId(requestId);
-  for (const activeAssignment of activeAssignments) {
-    await cancelAssignment(activeAssignment.assignment_id);
-  }
+  await updateVolunteerAvailability(
+    volunteer.volunteer_id,
+    false,
+    volunteer.last_known_latitude,
+    volunteer.last_known_longitude,
+  );
+  await createAvailabilityRecord(volunteer.volunteer_id, false, false);
 
-  // Try to find a NEW assignment for this volunteer
   await runAssignmentCycle();
-  const assignmentResult = await getAssignmentByVolunteerId(volunteer.volunteer_id);
 
   return { 
-    message: 'Request marked as resolved',
-    newAssignment: assignmentResult
+    message: 'Assignment resolved for this volunteer, you are now unavailable, and matching has been refreshed',
+    newAssignment: null
   };
 }
 
@@ -265,7 +267,22 @@ async function getAvailabilityStatus(userId) {
 }
 
 async function tryToAssignRequest(requestId) {
-  await runAssignmentCycle();
+  while (true) {
+    const volunteer = await findMatchingVolunteerForRequest(requestId);
+
+    if (!volunteer) {
+      break;
+    }
+
+    const assignment = await createAssignment(volunteer.volunteer_id, requestId);
+
+    if (!assignment) {
+      break;
+    }
+
+    await markRequestAssignedIfPending(requestId);
+  }
+
   const activeAssignments = await findActiveAssignmentsByRequestId(requestId);
   return activeAssignments.length > 0;
 }
