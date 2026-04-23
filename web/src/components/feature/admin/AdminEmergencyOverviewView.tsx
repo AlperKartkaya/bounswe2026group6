@@ -1,0 +1,252 @@
+"use client";
+
+import * as React from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { ApiError } from "@/lib/api";
+import { getAccessToken, clearAccessToken } from "@/lib/auth";
+import { fetchAdminEmergencyOverview, type EmergencyOverview } from "@/lib/admin";
+import { SectionCard } from "@/components/ui/display/SectionCard";
+import { SectionHeader } from "@/components/ui/display/SectionHeader";
+import { PrimaryButton } from "@/components/ui/buttons/PrimaryButton";
+import { SecondaryButton } from "@/components/ui/buttons/SecondaryButton";
+
+function MetricTile({
+    label,
+    value,
+    tone = "default",
+}: {
+    label: string;
+    value: number;
+    tone?: "default" | "success" | "warning" | "danger";
+}) {
+    return (
+        <article className={`admin-metric-tile tone-${tone}`}>
+            <p className="admin-metric-label">{label}</p>
+            <p className="admin-metric-value">{value}</p>
+        </article>
+    );
+}
+
+export default function AdminEmergencyOverviewView() {
+    const router = useRouter();
+    const pathname = usePathname();
+    const [overview, setOverview] = React.useState<EmergencyOverview | null>(null);
+    const [loading, setLoading] = React.useState(true);
+    const [refreshing, setRefreshing] = React.useState(false);
+    const [error, setError] = React.useState("");
+    const [includeRegionSummary, setIncludeRegionSummary] = React.useState(false);
+    const isFirstLoadRef = React.useRef(true);
+
+    const redirectToLogin = React.useCallback(() => {
+        clearAccessToken();
+        const returnTo = pathname || "/admin";
+        router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    }, [pathname, router]);
+
+    const loadOverview = React.useCallback(
+        async (includeRegion: boolean, mode: "initial" | "refresh" = "refresh") => {
+            const token = getAccessToken();
+            if (!token) {
+                redirectToLogin();
+                return;
+            }
+
+            if (mode === "initial") {
+                setLoading(true);
+            } else {
+                setRefreshing(true);
+            }
+            setError("");
+
+            try {
+                const result = await fetchAdminEmergencyOverview(token, {
+                    includeRegionSummary: includeRegion,
+                });
+                setOverview(result);
+            } catch (err) {
+                if (err instanceof ApiError && err.status === 401) {
+                    redirectToLogin();
+                    return;
+                }
+
+                if (err instanceof ApiError && err.status === 403) {
+                    router.replace("/home");
+                    return;
+                }
+
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : "Could not load admin emergency overview."
+                );
+            } finally {
+                setLoading(false);
+                setRefreshing(false);
+            }
+        },
+        [redirectToLogin, router]
+    );
+
+    React.useEffect(() => {
+        const mode = isFirstLoadRef.current ? "initial" : "refresh";
+        isFirstLoadRef.current = false;
+        void loadOverview(includeRegionSummary, mode);
+    }, [includeRegionSummary, loadOverview]);
+
+    if (loading) {
+        return (
+            <SectionCard>
+                <SectionHeader
+                    title="Emergency Overview"
+                    subtitle="Loading aggregate emergency metrics..."
+                />
+            </SectionCard>
+        );
+    }
+
+    if (!overview) {
+        return (
+            <SectionCard>
+                <SectionHeader
+                    title="Emergency Overview"
+                    subtitle="Could not load overview data."
+                />
+                <div className="admin-empty-state">
+                    <p>{error || "No overview data available right now."}</p>
+                    <PrimaryButton onClick={() => void loadOverview(includeRegionSummary, "refresh")}>
+                        Retry
+                    </PrimaryButton>
+                </div>
+            </SectionCard>
+        );
+    }
+
+    const regionSummary = overview.regionSummary || [];
+
+    return (
+        <div className="admin-overview-grid">
+            <SectionCard>
+                <SectionHeader
+                    title="Headline Metrics"
+                    subtitle="Current aggregate emergency snapshot."
+                />
+                <div className="admin-metric-grid">
+                    <MetricTile label="Total Emergencies" value={overview.totals.totalEmergencies} />
+                    <MetricTile label="Active" value={overview.totals.activeEmergencies} tone="warning" />
+                    <MetricTile label="Resolved" value={overview.totals.resolvedEmergencies} tone="success" />
+                    <MetricTile label="Closed" value={overview.totals.closedEmergencies} tone="default" />
+                </div>
+            </SectionCard>
+
+            <SectionCard>
+                <SectionHeader
+                    title="Status Breakdown"
+                    subtitle="Pending and handled request distribution."
+                />
+                <div className="admin-metric-grid">
+                    <MetricTile label="Pending" value={overview.statusBreakdown.pending} tone="warning" />
+                    <MetricTile label="In Progress" value={overview.statusBreakdown.inProgress} />
+                    <MetricTile label="Resolved" value={overview.statusBreakdown.resolved} tone="success" />
+                    <MetricTile label="Cancelled" value={overview.statusBreakdown.cancelled} tone="danger" />
+                </div>
+            </SectionCard>
+
+            <SectionCard>
+                <SectionHeader
+                    title="Urgency Breakdown"
+                    subtitle="Priority distribution based on aggregate urgency mapping."
+                />
+                <div className="admin-metric-grid">
+                    <MetricTile label="Low" value={overview.urgencyBreakdown.low} />
+                    <MetricTile label="Medium" value={overview.urgencyBreakdown.medium} tone="warning" />
+                    <MetricTile label="High" value={overview.urgencyBreakdown.high} tone="danger" />
+                </div>
+            </SectionCard>
+
+            <SectionCard>
+                <SectionHeader
+                    title="Recent Activity"
+                    subtitle="24-hour and 7-day activity overview."
+                />
+                <div className="admin-recent-grid">
+                    <div>
+                        <h3 className="admin-recent-title">Created</h3>
+                        <p className="admin-recent-line">Last 24h: {overview.recentActivity.createdLast24Hours}</p>
+                        <p className="admin-recent-line">Last 7d: {overview.recentActivity.createdLast7Days}</p>
+                    </div>
+                    <div>
+                        <h3 className="admin-recent-title">Resolved</h3>
+                        <p className="admin-recent-line">Last 24h: {overview.recentActivity.resolvedLast24Hours}</p>
+                        <p className="admin-recent-line">Last 7d: {overview.recentActivity.resolvedLast7Days}</p>
+                    </div>
+                    <div>
+                        <h3 className="admin-recent-title">Cancelled</h3>
+                        <p className="admin-recent-line">Last 24h: {overview.recentActivity.cancelledLast24Hours}</p>
+                        <p className="admin-recent-line">Last 7d: {overview.recentActivity.cancelledLast7Days}</p>
+                    </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard>
+                <SectionHeader
+                    title="Region Summary"
+                    subtitle="Optional city-based aggregate breakdown."
+                />
+                <div className="admin-region-actions">
+                    <SecondaryButton
+                        onClick={() => setIncludeRegionSummary((prev) => !prev)}
+                        disabled={refreshing}
+                    >
+                        {includeRegionSummary ? "Hide Region Summary" : "Load Region Summary"}
+                    </SecondaryButton>
+                    {refreshing ? <p className="admin-subtle">Refreshing...</p> : null}
+                </div>
+
+                {includeRegionSummary ? (
+                    regionSummary.length > 0 ? (
+                        <div className="admin-region-table-wrap">
+                            <table className="admin-region-table">
+                                <thead>
+                                    <tr>
+                                        <th>City</th>
+                                        <th>Total</th>
+                                        <th>Active</th>
+                                        <th>Pending</th>
+                                        <th>In Progress</th>
+                                        <th>Resolved</th>
+                                        <th>Cancelled</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {regionSummary.map((item) => (
+                                        <tr key={item.city}>
+                                            <td>{item.city}</td>
+                                            <td>{item.total}</td>
+                                            <td>{item.active}</td>
+                                            <td>{item.pending}</td>
+                                            <td>{item.inProgress}</td>
+                                            <td>{item.resolved}</td>
+                                            <td>{item.cancelled}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <p className="admin-subtle">No regional records available.</p>
+                    )
+                ) : (
+                    <p className="admin-subtle">
+                        Region summary is optional. Load it when you need city-level details.
+                    </p>
+                )}
+            </SectionCard>
+
+            {error ? (
+                <SectionCard>
+                    <p className="admin-error-text">{error}</p>
+                </SectionCard>
+            ) : null}
+        </div>
+    );
+}

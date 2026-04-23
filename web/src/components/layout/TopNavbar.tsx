@@ -4,12 +4,13 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import Link from "next/link";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { clearAccessToken, getAccessToken } from "@/lib/auth";
+import { clearAccessToken, fetchCurrentUser, getAccessToken } from "@/lib/auth";
 
 const navItemsOrdered = [
     { label: "Home", href: "/home" },
     { label: "News", href: "/news" },
     { label: "Emergency Numbers", href: "/emergency-numbers" },
+    { label: "Admin", href: "/admin", requiresAdmin: true },
     { label: "Profile", href: "/profile" },
     { label: "Privacy & Security", href: "/privacy-security" },
 ];
@@ -20,37 +21,72 @@ export function TopNavbar() {
     const router = useRouter();
     const pathname = usePathname();
     const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+    const [isAdmin, setIsAdmin] = React.useState(false);
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
     const menuRef = React.useRef<HTMLDivElement | null>(null);
 
     React.useEffect(() => {
-        const syncAuthState = () => {
-            setIsAuthenticated(Boolean(getAccessToken()));
+        let cancelled = false;
+
+        const syncAuthState = async () => {
+            const token = getAccessToken();
+
+            if (!token) {
+                if (!cancelled) {
+                    setIsAuthenticated(false);
+                    setIsAdmin(false);
+                }
+                return;
+            }
+
+            if (!cancelled) {
+                setIsAuthenticated(true);
+            }
+
+            try {
+                const user = await fetchCurrentUser(token);
+                if (!cancelled) {
+                    setIsAdmin(Boolean(user.isAdmin));
+                }
+            } catch {
+                clearAccessToken();
+                if (!cancelled) {
+                    setIsAuthenticated(false);
+                    setIsAdmin(false);
+                }
+            }
         };
 
         const handleStorage = (event: StorageEvent) => {
             if (event.key === null || event.key === "neph_access_token") {
-                syncAuthState();
+                void syncAuthState();
             }
         };
 
         const handleVisibilityChange = () => {
             if (document.visibilityState === "visible") {
-                syncAuthState();
+                void syncAuthState();
             }
         };
+        const handleFocus = () => {
+            void syncAuthState();
+        };
+        const handleAuthChanged = () => {
+            void syncAuthState();
+        };
 
-        syncAuthState();
+        void syncAuthState();
 
         window.addEventListener("storage", handleStorage);
-        window.addEventListener("focus", syncAuthState);
-        window.addEventListener("neph-auth-changed", syncAuthState);
+        window.addEventListener("focus", handleFocus);
+        window.addEventListener("neph-auth-changed", handleAuthChanged);
         document.addEventListener("visibilitychange", handleVisibilityChange);
 
         return () => {
+            cancelled = true;
             window.removeEventListener("storage", handleStorage);
-            window.removeEventListener("focus", syncAuthState);
-            window.removeEventListener("neph-auth-changed", syncAuthState);
+            window.removeEventListener("focus", handleFocus);
+            window.removeEventListener("neph-auth-changed", handleAuthChanged);
             document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
     }, []);
@@ -79,9 +115,17 @@ export function TopNavbar() {
         router.replace("/login");
     };
 
-    const navItems = navItemsOrdered.filter((item) =>
-        isAuthenticated ? true : guestAllowedPaths.has(item.href)
-    );
+    const navItems = navItemsOrdered.filter((item) => {
+        if (!isAuthenticated) {
+            return guestAllowedPaths.has(item.href);
+        }
+
+        if (item.requiresAdmin) {
+            return isAdmin;
+        }
+
+        return true;
+    });
 
     return (
         <header className="top-navbar">

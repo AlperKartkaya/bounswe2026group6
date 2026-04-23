@@ -769,6 +769,127 @@ textarea::placeholder {
     color: var(--text-secondary);
 }
 
+.admin-overview-grid {
+    display: grid;
+    gap: 20px;
+}
+
+.admin-metric-grid {
+    margin-top: 16px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.admin-metric-tile {
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    background: var(--surface-card);
+    padding: 14px;
+}
+
+.admin-metric-tile.tone-success {
+    border-color: color-mix(in srgb, var(--success) 45%, var(--border-subtle));
+}
+
+.admin-metric-tile.tone-warning {
+    border-color: color-mix(in srgb, var(--warning) 45%, var(--border-subtle));
+}
+
+.admin-metric-tile.tone-danger {
+    border-color: color-mix(in srgb, var(--error) 45%, var(--border-subtle));
+}
+
+.admin-metric-label {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.admin-metric-value {
+    margin: 8px 0 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.admin-recent-grid {
+    margin-top: 16px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.admin-recent-title {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.admin-recent-line {
+    margin: 8px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.admin-region-actions {
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.admin-region-table-wrap {
+    margin-top: 16px;
+    overflow-x: auto;
+}
+
+.admin-region-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 720px;
+}
+
+.admin-region-table th,
+.admin-region-table td {
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 10px 8px;
+    text-align: left;
+    font-size: 0.85rem;
+}
+
+.admin-region-table th {
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.admin-region-table td {
+    color: var(--text-primary);
+}
+
+.admin-empty-state {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 320px;
+    color: var(--text-secondary);
+}
+
+.admin-subtle {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.admin-error-text {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--error);
+}
+
 .root-layout-body {
     display: flex;
     min-height: 100vh;
