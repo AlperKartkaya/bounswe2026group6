@@ -89,6 +89,8 @@ async function seedEmergencyOverviewRecord({
   status = 'PENDING',
   city = 'istanbul',
   createdAtHoursAgo = 2,
+  affectedPeopleCount = 2,
+  riskFlags = ['injury'],
 }) {
   return withClient(async (client) => {
     await client.query(
@@ -119,8 +121,8 @@ async function seedEmergencyOverviewRecord({
           NULL,
           ARRAY['first_aid']::TEXT[],
           '',
-          2,
-          ARRAY['injury']::TEXT[],
+          $4::int,
+          $5::TEXT[],
           ARRAY[]::TEXT[],
           'first_aid',
           'E2E seeded request',
@@ -144,7 +146,7 @@ async function seedEmergencyOverviewRecord({
           FALSE
         )
       `,
-      [requestId, status, String(createdAtHoursAgo)]
+      [requestId, status, String(createdAtHoursAgo), affectedPeopleCount, riskFlags]
     );
 
     await client.query(

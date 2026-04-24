@@ -287,7 +287,9 @@ export default function AdminEmergencyOverviewView() {
                 </div>
 
                 {includeRegionSummary ? (
-                    regionSummary.length > 0 ? (
+                    regionError ? (
+                        <p className="admin-error-text">Region summary refresh failed: {regionError}</p>
+                    ) : regionSummary.length > 0 ? (
                         <div className="admin-region-table-wrap">
                             <table className="admin-region-table">
                                 <thead>
@@ -324,10 +326,6 @@ export default function AdminEmergencyOverviewView() {
                         Region summary is optional. Load it when you need city-level details.
                     </p>
                 )}
-
-                {includeRegionSummary && regionError ? (
-                    <p className="admin-error-text">Region summary refresh failed: {regionError}</p>
-                ) : null}
             </SectionCard>
         </div>
     );

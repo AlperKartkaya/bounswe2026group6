@@ -66,6 +66,16 @@ async function ensureOverviewReady(page, { allowRetryClick = false } = {}) {
   throw new Error(`Admin overview did not become ready. Current URL: ${page.url()}`);
 }
 
+async function readMetricValue(page, label) {
+  const valueText = await page
+    .locator('.admin-metric-tile', { hasText: label })
+    .locator('.admin-metric-value')
+    .first()
+    .innerText();
+
+  return Number.parseInt(valueText, 10);
+}
+
 test.beforeEach(async () => {
   await resetDatabase();
 });
@@ -121,6 +131,80 @@ test('authenticated admin can open dashboard and toggle region summary', async (
 
   // keep variable usage explicit for lint/readability in CI logs
   expect(completedUser.accessToken).toBeDefined();
+});
+
+test('aggregate metrics reflect mixed status and urgency records', async ({ page }) => {
+  const email = `admin-metrics-${Date.now()}@example.com`;
+  const password = 'Passw0rd!';
+
+  await createCompletedUser({ email, password });
+  const dbUser = await waitForUserByEmail(email);
+  await promoteUserToAdmin({ userId: dbUser.user_id });
+
+  await seedEmergencyOverviewRecord({
+    requestId: 'e2e_mix_pending_low',
+    status: 'PENDING',
+    city: 'ankara',
+    createdAtHoursAgo: 2,
+    affectedPeopleCount: 1,
+    riskFlags: [],
+  });
+  await seedEmergencyOverviewRecord({
+    requestId: 'e2e_mix_progress_high',
+    status: 'IN_PROGRESS',
+    city: 'izmir',
+    createdAtHoursAgo: 3,
+    affectedPeopleCount: 6,
+    riskFlags: ['injury', 'flood'],
+  });
+  await seedEmergencyOverviewRecord({
+    requestId: 'e2e_mix_resolved_medium',
+    status: 'RESOLVED',
+    city: 'bursa',
+    createdAtHoursAgo: 4,
+    affectedPeopleCount: 2,
+    riskFlags: ['injury'],
+  });
+  await seedEmergencyOverviewRecord({
+    requestId: 'e2e_mix_cancelled_medium',
+    status: 'CANCELLED',
+    city: 'adana',
+    createdAtHoursAgo: 5,
+    affectedPeopleCount: 3,
+    riskFlags: [],
+  });
+
+  await page.goto('/login');
+  await loginThroughUi(page, { email, password });
+  await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible();
+
+  await page.goto('/admin');
+  await expect(page).toHaveURL(/\/admin$/);
+  await ensureOverviewReady(page, { allowRetryClick: true });
+
+  await expect.poll(async () => ({
+    total: await readMetricValue(page, 'Total Emergencies'),
+    active: await readMetricValue(page, 'Active'),
+    resolved: await readMetricValue(page, 'Resolved'),
+    closed: await readMetricValue(page, 'Closed'),
+    pending: await readMetricValue(page, 'Pending'),
+    inProgress: await readMetricValue(page, 'In Progress'),
+    cancelled: await readMetricValue(page, 'Cancelled'),
+    urgencyLow: await readMetricValue(page, 'Low'),
+    urgencyMedium: await readMetricValue(page, 'Medium'),
+    urgencyHigh: await readMetricValue(page, 'High'),
+  })).toMatchObject({
+    total: 4,
+    active: 2,
+    resolved: 1,
+    closed: 2,
+    pending: 1,
+    inProgress: 1,
+    cancelled: 1,
+    urgencyLow: 1,
+    urgencyMedium: 2,
+    urgencyHigh: 1,
+  });
 });
 
 test('navbar admin link visibility is role-aware', async ({ page }) => {
