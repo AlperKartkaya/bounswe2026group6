@@ -3,11 +3,7 @@
 import * as React from "react";
 import L from "leaflet";
 import { LeafletMapCanvas } from "@/components/feature/location/LeafletMapCanvas";
-
-type LatLng = {
-    latitude: number;
-    longitude: number;
-};
+import type { LatLng } from "@/components/feature/location/LeafletMapCanvas";
 
 type GatheringAreaMapFeature = {
     featureKey: string;
@@ -157,6 +153,7 @@ export function LeafletGatheringAreasMap({
             center={center}
             zoom={zoom}
             heightClassName={heightClassName}
+            ariaLabel="Nearby gathering areas map"
             onMapReady={(map) => {
                 mapRef.current = map;
                 setMapReadyVersion((version) => version + 1);

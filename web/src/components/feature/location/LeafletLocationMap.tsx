@@ -6,11 +6,7 @@ import markerIcon2xAsset from "leaflet/dist/images/marker-icon-2x.png";
 import markerIconAsset from "leaflet/dist/images/marker-icon.png";
 import markerShadowAsset from "leaflet/dist/images/marker-shadow.png";
 import { LeafletMapCanvas } from "@/components/feature/location/LeafletMapCanvas";
-
-type LatLng = {
-    latitude: number;
-    longitude: number;
-};
+import type { LatLng } from "@/components/feature/location/LeafletMapCanvas";
 
 type LeafletLocationMapProps = {
     center: LatLng;
@@ -46,6 +42,7 @@ export function LeafletLocationMap({
     const mapRef = React.useRef<L.Map | null>(null);
     const markerRef = React.useRef<L.Marker | null>(null);
     const onSelectPositionRef = React.useRef(onSelectPosition);
+    const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
 
     React.useEffect(() => {
         onSelectPositionRef.current = onSelectPosition;
@@ -117,15 +114,21 @@ export function LeafletLocationMap({
         }
 
         markerRef.current.setLatLng(latLng);
-    }, [selectedPosition, interactionMode]);
+    }, [selectedPosition, interactionMode, mapReadyVersion]);
 
     return (
         <LeafletMapCanvas
             center={center}
             zoom={zoom}
             heightClassName={heightClassName}
+            ariaLabel={
+                interactionMode === "readonly"
+                    ? "Saved location preview map"
+                    : "Location picker map"
+            }
             onMapReady={(map) => {
                 mapRef.current = map;
+                setMapReadyVersion((version) => version + 1);
             }}
             onMapClick={
                 interactionMode === "selectable"

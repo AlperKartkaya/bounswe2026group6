@@ -165,20 +165,26 @@ export default function PrivacySecurityView() {
                 </div>
 
                 <div className="mt-5 grid gap-2">
-                    <p className="text-sm font-medium text-[color:var(--text-primary)]">
+                    <h3 className="text-sm font-medium text-[color:var(--text-primary)]">
                         Shared Location Preview
-                    </p>
+                    </h3>
                     <p className="text-sm text-[color:var(--text-secondary)]">
-                        This map uses the same shared map infrastructure as profile location screens.
+                        Review the location that may be shared for emergency coordination.
                     </p>
-                    <LocationPreviewMap
-                        center={locationPreview || DEFAULT_MAP_CENTER}
-                        selectedPosition={locationPreview}
-                        interactionMode="readonly"
-                        heightClassName="h-56"
-                        zoom={locationPreview ? 13 : 11}
-                    />
-                    {!locationPreview ? (
+                    {shareLocation ? (
+                        <LocationPreviewMap
+                            center={locationPreview || DEFAULT_MAP_CENTER}
+                            selectedPosition={locationPreview}
+                            interactionMode="readonly"
+                            heightClassName="h-56"
+                            zoom={locationPreview ? 13 : 11}
+                        />
+                    ) : (
+                        <HelperText>
+                            Turn on Share Current Location to show your saved location preview.
+                        </HelperText>
+                    )}
+                    {shareLocation && !locationPreview ? (
                         <HelperText>
                             No saved coordinates yet. Save your profile location to see it here.
                         </HelperText>

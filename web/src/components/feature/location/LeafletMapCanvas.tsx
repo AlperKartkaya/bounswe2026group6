@@ -13,6 +13,7 @@ type LeafletMapCanvasProps = {
     center: LatLng;
     zoom?: number;
     heightClassName?: string;
+    ariaLabel?: string;
     onMapReady?: (map: L.Map) => void;
     onMapClick?: (position: LatLng) => void;
 };
@@ -21,6 +22,7 @@ export function LeafletMapCanvas({
     center,
     zoom = 12,
     heightClassName = "h-72",
+    ariaLabel = "Map",
     onMapReady,
     onMapClick,
 }: LeafletMapCanvasProps) {
@@ -92,7 +94,11 @@ export function LeafletMapCanvas({
     }, [center.latitude, center.longitude]);
 
     return (
-        <div className={`overflow-hidden rounded-[10px] border border-[#e7e7ea] ${heightClassName}`}>
+        <div
+            className={`overflow-hidden rounded-[10px] border border-[#e7e7ea] ${heightClassName}`}
+            role="region"
+            aria-label={ariaLabel}
+        >
             <div ref={containerRef} className="h-full w-full" />
         </div>
     );
