@@ -168,4 +168,65 @@ describe('active-assignment-per-volunteer migration safety', () => {
       seedAssignment('asg_300_blocked_after_guard', 'vol_duplicate', 'req_after_guard', '2026-04-23T08:10:00.000Z'),
     ).rejects.toMatchObject({ code: '23505' });
   });
+
+  test('cleanup migration removes stale closed-request assignments before ranking open ones', async () => {
+    await seedActiveUser('user_volunteer_stale');
+    await seedVolunteer('vol_stale', 'user_volunteer_stale');
+
+    await seedActiveUser('user_req_closed');
+    await seedActiveUser('user_req_open');
+    await seedActiveUser('user_req_after_cleanup');
+
+    await seedHelpRequest('req_closed', 'user_req_closed', 'RESOLVED');
+    await seedHelpRequest('req_open', 'user_req_open', 'ASSIGNED');
+    await seedHelpRequest('req_after_cleanup', 'user_req_after_cleanup', 'PENDING');
+
+    await seedAssignment('asg_000_closed', 'vol_stale', 'req_closed', '2026-04-23T08:00:00.000Z');
+    await seedAssignment('asg_100_open', 'vol_stale', 'req_open', '2026-04-23T08:05:00.000Z');
+
+    await query(cleanupMigrationSql);
+    await query(guardMigrationSql);
+
+    const survivingAssignments = await query(
+      `
+        SELECT assignment_id, request_id
+        FROM assignments
+        WHERE volunteer_id = $1 AND is_cancelled = FALSE
+        ORDER BY assigned_at ASC, assignment_id ASC;
+      `,
+      ['vol_stale'],
+    );
+
+    expect(survivingAssignments.rows).toEqual([
+      {
+        assignment_id: 'asg_100_open',
+        request_id: 'req_open',
+      },
+    ]);
+
+    const requestStatuses = await query(
+      `
+        SELECT request_id, status
+        FROM help_requests
+        WHERE request_id = ANY($1::VARCHAR(64)[])
+        ORDER BY request_id ASC;
+      `,
+      [['req_closed', 'req_open']],
+    );
+
+    expect(requestStatuses.rows).toEqual([
+      {
+        request_id: 'req_closed',
+        status: 'RESOLVED',
+      },
+      {
+        request_id: 'req_open',
+        status: 'ASSIGNED',
+      },
+    ]);
+
+    await expect(
+      seedAssignment('asg_200_blocked_after_guard', 'vol_stale', 'req_after_cleanup', '2026-04-23T08:10:00.000Z'),
+    ).rejects.toMatchObject({ code: '23505' });
+  });
 });

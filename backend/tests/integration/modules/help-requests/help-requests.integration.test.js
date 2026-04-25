@@ -579,6 +579,78 @@ describe('help-requests integration', () => {
 		expect(getResponse.body.request.status).toBe('RESOLVED');
 	});
 
+	test('PATCH /:id/status guest resolve clears active assignments and frees volunteers for future matches', async () => {
+		const app = createTestApp();
+		const helperOneId = 'user_hr_guest_resolve_helper_1';
+		await seedActiveUser(helperOneId, 'guestresolvehelper1@example.com');
+		const helperOneToken = buildAuthToken(helperOneId);
+
+		const firstCreate = await request(app)
+			.post('/api/help-requests')
+			.send(buildCreatePayload({ description: 'guest request that will be resolved' }));
+
+		const firstRequestId = firstCreate.body.request.id;
+
+		const firstToggle = await request(app)
+			.post('/api/availability/toggle')
+			.set('Authorization', `Bearer ${helperOneToken}`)
+			.send({ isAvailable: true });
+
+		expect(firstToggle.status).toBe(200);
+		expect(firstToggle.body.assignment.request_id).toBe(firstRequestId);
+
+		const resolveResponse = await request(app)
+			.patch(`/api/help-requests/${firstRequestId}/status`)
+			.set('x-help-request-access-token', firstCreate.body.guestAccessToken)
+			.send({ status: 'RESOLVED' });
+
+		expect(resolveResponse.status).toBe(200);
+		expect(resolveResponse.body.request.status).toBe('RESOLVED');
+
+		const staleAssignments = await query(
+			`SELECT assignment_id FROM assignments WHERE request_id = $1 AND is_cancelled = FALSE`,
+			[firstRequestId],
+		);
+		expect(staleAssignments.rows).toHaveLength(0);
+
+		const helperOneStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${helperOneToken}`);
+
+		expect(helperOneStatus.status).toBe(200);
+		expect(helperOneStatus.body.assignment).toBeNull();
+
+		const secondCreate = await request(app)
+			.post('/api/help-requests')
+			.send(buildCreatePayload({ description: 'guest request after resolve cleanup' }));
+
+		const secondRequestId = secondCreate.body.request.id;
+
+		const helperOneOff = await request(app)
+			.post('/api/availability/toggle')
+			.set('Authorization', `Bearer ${helperOneToken}`)
+			.send({ isAvailable: false });
+
+		expect(helperOneOff.status).toBe(200);
+
+		const helperOneBackOn = await request(app)
+			.post('/api/availability/toggle')
+			.set('Authorization', `Bearer ${helperOneToken}`)
+			.send({ isAvailable: true });
+
+		expect(helperOneBackOn.status).toBe(200);
+		expect(helperOneBackOn.body.assignment).toBeTruthy();
+		expect(helperOneBackOn.body.assignment.request_id).toBe(secondRequestId);
+
+		const helperOneAssignmentAfterRetry = await request(app)
+			.get('/api/availability/my-assignment')
+			.set('Authorization', `Bearer ${helperOneToken}`);
+
+		expect(helperOneAssignmentAfterRetry.status).toBe(200);
+		expect(helperOneAssignmentAfterRetry.body.assignment).toBeTruthy();
+		expect(helperOneAssignmentAfterRetry.body.assignment.request_id).toBe(secondRequestId);
+	});
+
 	test('PATCH /:id/status returns 401 for guest request when token is missing', async () => {
 		const app = createTestApp();
 
@@ -661,6 +733,82 @@ describe('help-requests integration', () => {
 		expect(response.body.request.resolvedAt).toBeTruthy();
 	});
 
+	test('PATCH /:id/status requester resolve clears active assignments and frees volunteers for future matches', async () => {
+		const app = createTestApp();
+		const requesterId = 'user_hr_resolve_cleanup_requester';
+		const helperOneId = 'user_hr_resolve_cleanup_helper_1';
+		await seedActiveUser(requesterId, 'resolvecleanuprequester@example.com');
+		await seedActiveUser(helperOneId, 'resolvecleanuphelper1@example.com');
+		const requesterToken = buildAuthToken(requesterId);
+		const helperOneToken = buildAuthToken(helperOneId);
+
+		const firstCreate = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${requesterToken}`)
+			.send(buildCreatePayload({ description: 'requester request that will be resolved' }));
+
+		const firstRequestId = firstCreate.body.request.id;
+
+		const firstToggle = await request(app)
+			.post('/api/availability/toggle')
+			.set('Authorization', `Bearer ${helperOneToken}`)
+			.send({ isAvailable: true });
+
+		expect(firstToggle.status).toBe(200);
+		expect(firstToggle.body.assignment.request_id).toBe(firstRequestId);
+
+		const resolveResponse = await request(app)
+			.patch(`/api/help-requests/${firstRequestId}/status`)
+			.set('Authorization', `Bearer ${requesterToken}`)
+			.send({ status: 'RESOLVED' });
+
+		expect(resolveResponse.status).toBe(200);
+		expect(resolveResponse.body.request.status).toBe('RESOLVED');
+
+		const staleAssignments = await query(
+			`SELECT assignment_id FROM assignments WHERE request_id = $1 AND is_cancelled = FALSE`,
+			[firstRequestId],
+		);
+		expect(staleAssignments.rows).toHaveLength(0);
+
+		const helperOneStatus = await request(app)
+			.get('/api/availability/status')
+			.set('Authorization', `Bearer ${helperOneToken}`);
+
+		expect(helperOneStatus.status).toBe(200);
+		expect(helperOneStatus.body.assignment).toBeNull();
+
+		const secondCreate = await request(app)
+			.post('/api/help-requests')
+			.send(buildCreatePayload({ description: 'second request after requester resolve cleanup' }));
+
+		const secondRequestId = secondCreate.body.request.id;
+
+		const helperOneOff = await request(app)
+			.post('/api/availability/toggle')
+			.set('Authorization', `Bearer ${helperOneToken}`)
+			.send({ isAvailable: false });
+
+		expect(helperOneOff.status).toBe(200);
+
+		const helperOneBackOn = await request(app)
+			.post('/api/availability/toggle')
+			.set('Authorization', `Bearer ${helperOneToken}`)
+			.send({ isAvailable: true });
+
+		expect(helperOneBackOn.status).toBe(200);
+		expect(helperOneBackOn.body.assignment).toBeTruthy();
+		expect(helperOneBackOn.body.assignment.request_id).toBe(secondRequestId);
+
+		const helperOneAssignmentAfterRetry = await request(app)
+			.get('/api/availability/my-assignment')
+			.set('Authorization', `Bearer ${helperOneToken}`);
+
+		expect(helperOneAssignmentAfterRetry.status).toBe(200);
+		expect(helperOneAssignmentAfterRetry.body.assignment).toBeTruthy();
+		expect(helperOneAssignmentAfterRetry.body.assignment.request_id).toBe(secondRequestId);
+	});
+
 	test('PATCH /:id/status returns 409 when moving RESOLVED back to SYNCED', async () => {
 		const app = createTestApp();
 		const userId = 'user_hr_13';
@@ -683,6 +831,57 @@ describe('help-requests integration', () => {
 			.patch(`/api/help-requests/${requestId}/status`)
 			.set('Authorization', `Bearer ${token}`)
 			.send({ status: 'SYNCED' });
+
+		expect(response.status).toBe(409);
+		expect(response.body.code).toBe('INVALID_STATUS_TRANSITION');
+	});
+
+	test('PATCH /:id/status returns 409 when moving CANCELLED to RESOLVED', async () => {
+		const app = createTestApp();
+		const userId = 'user_hr_cancelled_transition';
+		await seedActiveUser(userId, 'cancelledtransition@example.com');
+		const token = buildAuthToken(userId);
+
+		const createResponse = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${token}`)
+			.send(buildCreatePayload({ helpTypes: ['food'] }));
+
+		const requestId = createResponse.body.request.id;
+
+		await request(app)
+			.patch(`/api/help-requests/${requestId}/status`)
+			.set('Authorization', `Bearer ${token}`)
+			.send({ status: 'CANCELLED' });
+
+		const response = await request(app)
+			.patch(`/api/help-requests/${requestId}/status`)
+			.set('Authorization', `Bearer ${token}`)
+			.send({ status: 'RESOLVED' });
+
+		expect(response.status).toBe(409);
+		expect(response.body.code).toBe('INVALID_STATUS_TRANSITION');
+	});
+
+	test('PATCH /:id/status returns 409 when moving guest CANCELLED request to RESOLVED', async () => {
+		const app = createTestApp();
+
+		const createResponse = await request(app)
+			.post('/api/help-requests')
+			.send(buildCreatePayload({ description: 'guest request for cancelled transition guard' }));
+
+		const requestId = createResponse.body.request.id;
+		const guestAccessToken = createResponse.body.guestAccessToken;
+
+		await request(app)
+			.patch(`/api/help-requests/${requestId}/status`)
+			.set('x-help-request-access-token', guestAccessToken)
+			.send({ status: 'CANCELLED' });
+
+		const response = await request(app)
+			.patch(`/api/help-requests/${requestId}/status`)
+			.set('x-help-request-access-token', guestAccessToken)
+			.send({ status: 'RESOLVED' });
 
 		expect(response.status).toBe(409);
 		expect(response.body.code).toBe('INVALID_STATUS_TRANSITION');
