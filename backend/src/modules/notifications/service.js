@@ -13,6 +13,7 @@ const {
   getNotificationDeliveryStats,
   listNotificationTypePreferencesByUserId,
   upsertNotificationTypePreference,
+  listUserIdsWithinRadius,
 } = require('./repository');
 const { NOTIFICATION_TYPES } = require('./constants');
 const { sendPushNotification } = require('./push');
@@ -325,6 +326,50 @@ async function getAdminNotificationStats(requestingUser) {
   return getNotificationDeliveryStats();
 }
 
+async function createEmergencyBroadcast(requestingUser, payload) {
+  if (!requestingUser || !requestingUser.isAdmin) {
+    const error = new Error('Admin access required.');
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const recipientUserIds = await listUserIdsWithinRadius({
+    latitude: payload.location.latitude,
+    longitude: payload.location.longitude,
+    radiusKm: payload.location.radiusKm,
+    limit: payload.maxRecipients || 5000,
+  });
+
+  let deliveredCount = 0;
+  for (const recipientUserId of recipientUserIds) {
+    await createNotification({
+      recipientUserId,
+      actorUserId: requestingUser.userId,
+      type: 'SYSTEM',
+      title: payload.title,
+      body: payload.body,
+      entity: {
+        type: 'EMERGENCY_BROADCAST',
+        id: payload.broadcastId,
+      },
+      data: {
+        screen: 'notifications',
+        kind: 'emergency_broadcast',
+        radiusKm: payload.location.radiusKm,
+        latitude: payload.location.latitude,
+        longitude: payload.location.longitude,
+      },
+    });
+    deliveredCount += 1;
+  }
+
+  return {
+    broadcastId: payload.broadcastId,
+    recipientCount: recipientUserIds.length,
+    deliveredCount,
+  };
+}
+
 module.exports = {
   createNotification,
   createNotificationForRequester,
@@ -339,4 +384,5 @@ module.exports = {
   updateMyNotificationTypePreference,
   getMyUnreadNotificationCount,
   getAdminNotificationStats,
+  createEmergencyBroadcast,
 };

@@ -1,3 +1,5 @@
+const { randomUUID } = require('crypto');
+
 const {
   createNotificationForRequester,
   listMyNotifications,
@@ -11,6 +13,7 @@ const {
   updateMyNotificationTypePreference,
   getMyUnreadNotificationCount,
   getAdminNotificationStats,
+  createEmergencyBroadcast,
 } = require('./service');
 const {
   validateCreateNotificationPayload,
@@ -20,6 +23,7 @@ const {
   validateUnregisterDevicePayload,
   validateUpdatePreferencesPayload,
   validateUpdateTypePreferencePayload,
+  validateEmergencyBroadcastPayload,
 } = require('./validators');
 
 function sendError(response, status, code, message, details) {
@@ -215,6 +219,28 @@ async function getUnreadCount(request, response) {
   }
 }
 
+async function postEmergencyBroadcast(request, response) {
+  const validation = validateEmergencyBroadcastPayload(request.body || {});
+  if (validation.errors.length > 0) {
+    return sendError(response, 400, 'VALIDATION_FAILED', 'Validation failed', validation.errors);
+  }
+
+  try {
+    const result = await createEmergencyBroadcast(request.user, {
+      ...validation.value,
+      broadcastId: `broadcast_${randomUUID()}`.slice(0, 64),
+    });
+    return response.status(201).json(result);
+  } catch (error) {
+    if (error.code === 'FORBIDDEN') {
+      return sendError(response, 403, 'FORBIDDEN', error.message);
+    }
+
+    console.error('notifications.postEmergencyBroadcast failed', error);
+    return sendError(response, 500, 'INTERNAL_ERROR', 'Unexpected server error');
+  }
+}
+
 module.exports = {
   createNotification,
   getMyNotifications,
@@ -228,4 +254,5 @@ module.exports = {
   patchTypePreference,
   getUnreadCount,
   getAdminStats,
+  postEmergencyBroadcast,
 };

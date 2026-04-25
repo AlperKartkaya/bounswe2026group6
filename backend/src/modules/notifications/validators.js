@@ -319,6 +319,59 @@ function validateUpdateTypePreferencePayload(payload) {
   };
 }
 
+function validateEmergencyBroadcastPayload(payload) {
+  const errors = [];
+
+  if (!isPlainObject(payload)) {
+    return {
+      errors: ['Payload must be an object.'],
+      value: null,
+    };
+  }
+
+  const title = validateRequiredString('title', payload.title, errors, { maxLength: 255 });
+  const body = validateRequiredString('body', payload.body, errors, { maxLength: 2000 });
+
+  if (!isPlainObject(payload.location)) {
+    errors.push('`location` must be an object.');
+  }
+
+  const latitude = Number(payload?.location?.latitude);
+  const longitude = Number(payload?.location?.longitude);
+  const radiusKm = Number(payload?.location?.radiusKm);
+  const maxRecipients = payload.maxRecipients == null ? 5000 : Number(payload.maxRecipients);
+
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+    errors.push('`location.latitude` must be a valid number between -90 and 90.');
+  }
+
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    errors.push('`location.longitude` must be a valid number between -180 and 180.');
+  }
+
+  if (!Number.isFinite(radiusKm) || radiusKm <= 0 || radiusKm > 1000) {
+    errors.push('`location.radiusKm` must be a valid number greater than 0 and at most 1000.');
+  }
+
+  if (!Number.isInteger(maxRecipients) || maxRecipients < 1 || maxRecipients > 50000) {
+    errors.push('`maxRecipients` must be an integer between 1 and 50000.');
+  }
+
+  return {
+    errors,
+    value: {
+      title,
+      body,
+      location: {
+        latitude,
+        longitude,
+        radiusKm,
+      },
+      maxRecipients,
+    },
+  };
+}
+
 module.exports = {
   validateCreateNotificationPayload,
   validateListNotificationsQuery,
@@ -327,4 +380,5 @@ module.exports = {
   validateUnregisterDevicePayload,
   validateUpdatePreferencesPayload,
   validateUpdateTypePreferencePayload,
+  validateEmergencyBroadcastPayload,
 };

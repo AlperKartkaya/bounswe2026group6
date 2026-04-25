@@ -14,6 +14,7 @@ const {
   patchTypePreference,
   getUnreadCount,
   getAdminStats,
+  postEmergencyBroadcast,
 } = require('./controller');
 
 const notificationsRouter = express.Router();
@@ -41,6 +42,7 @@ notificationsRouter.get('/preferences/types', getTypePreferences);
 notificationsRouter.patch('/preferences/types', writeLimiter, patchTypePreference);
 notificationsRouter.get('/unread-count', getUnreadCount);
 notificationsRouter.get('/admin/stats', getAdminStats);
+notificationsRouter.post('/admin/broadcast/emergency', writeLimiter, requireAdmin, postEmergencyBroadcast);
 
 module.exports = {
   notificationsRouter,

@@ -43,6 +43,15 @@ const env = {
   },
   notifications: {
     retentionDays: readNumber(process.env.NOTIFICATION_RETENTION_DAYS, 90),
+    jobsEnabled: (process.env.NOTIFICATION_JOBS_ENABLED || 'true').toLowerCase() !== 'false',
+    jobIntervalMs: readNumber(process.env.NOTIFICATION_JOB_INTERVAL_MS, 5 * 60 * 1000),
+    jobBatchSize: readNumber(process.env.NOTIFICATION_JOB_BATCH_SIZE, 100),
+    availabilityReminderMinutes: readNumber(process.env.NOTIFICATION_AVAILABILITY_REMINDER_MINUTES, 120),
+    availabilityReminderCooldownMinutes: readNumber(
+      process.env.NOTIFICATION_AVAILABILITY_REMINDER_COOLDOWN_MINUTES,
+      180,
+    ),
+    pendingRequestTtlHours: readNumber(process.env.NOTIFICATION_PENDING_REQUEST_TTL_HOURS, 72),
   },
 };
 

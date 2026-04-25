@@ -412,4 +412,55 @@ describe('notifications integration', () => {
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('FORBIDDEN');
   });
+
+  test('POST /api/notifications/admin/broadcast/emergency sends location-filtered system notifications', async () => {
+    const app = createTestApp();
+    await seedActiveAdmin('user_notif_admin_broadcast_1');
+    await seedActiveUser('user_notif_loc_1');
+    await seedActiveUser('user_notif_loc_2');
+
+    await query(
+      `
+        INSERT INTO user_profiles (profile_id, user_id, first_name, last_name)
+        VALUES
+          ('profile_notif_loc_1', 'user_notif_loc_1', 'A', 'User'),
+          ('profile_notif_loc_2', 'user_notif_loc_2', 'B', 'User');
+      `,
+    );
+
+    await query(
+      `
+        INSERT INTO location_profiles (
+          location_profile_id,
+          profile_id,
+          city,
+          country,
+          latitude,
+          longitude
+        )
+        VALUES
+          ('locp_notif_1', 'profile_notif_loc_1', 'Istanbul', 'TR', 41.0082, 28.9784),
+          ('locp_notif_2', 'profile_notif_loc_2', 'Istanbul', 'TR', 48.8566, 2.3522);
+      `,
+    );
+
+    const adminToken = buildAuthToken('user_notif_admin_broadcast_1', { isAdmin: true });
+
+    const response = await request(app)
+      .post('/api/notifications/admin/broadcast/emergency')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Emergency nearby',
+        body: 'Please stay safe.',
+        location: {
+          latitude: 41.0082,
+          longitude: 28.9784,
+          radiusKm: 10,
+        },
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.recipientCount).toBe(1);
+    expect(response.body.deliveredCount).toBe(1);
+  });
 });

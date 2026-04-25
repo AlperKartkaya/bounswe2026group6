@@ -472,6 +472,101 @@ async function upsertNotificationTypePreference({ userId, notificationType, push
   };
 }
 
+async function listUserIdsWithinRadius({
+  latitude,
+  longitude,
+  radiusKm,
+  limit = 5000,
+}) {
+  const result = await query(
+    `
+      SELECT DISTINCT up.user_id
+      FROM location_profiles lp
+      JOIN user_profiles up ON up.profile_id = lp.profile_id
+      WHERE lp.latitude IS NOT NULL
+        AND lp.longitude IS NOT NULL
+        AND (
+          6371 * acos(
+            least(
+              1,
+              greatest(
+                -1,
+                cos(radians($1)) * cos(radians(lp.latitude))
+                * cos(radians(lp.longitude) - radians($2))
+                + sin(radians($1)) * sin(radians(lp.latitude))
+              )
+            )
+          )
+        ) <= $3
+      LIMIT $4
+    `,
+    [latitude, longitude, radiusKm, limit],
+  );
+
+  return result.rows.map((row) => row.user_id);
+}
+
+async function listAvailabilityReminderCandidates({
+  minMinutesSinceLocationUpdate,
+  reminderCooldownMinutes,
+  limit = 100,
+}) {
+  const result = await query(
+    `
+      SELECT DISTINCT v.user_id
+      FROM volunteers v
+      WHERE v.is_available = TRUE
+        AND v.location_updated_at IS NOT NULL
+        AND v.location_updated_at <= CURRENT_TIMESTAMP - ($1::int * INTERVAL '1 minute')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM assignments a
+          JOIN help_requests hr ON hr.request_id = a.request_id
+          WHERE a.volunteer_id = v.volunteer_id
+            AND a.is_cancelled = FALSE
+            AND hr.status IN ('ASSIGNED', 'IN_PROGRESS')
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM notifications n
+          WHERE n.recipient_user_id = v.user_id
+            AND n.type = 'TASK_UPDATED'
+            AND COALESCE(n.payload->>'kind', '') = 'availability_reminder'
+            AND n.created_at >= CURRENT_TIMESTAMP - ($2::int * INTERVAL '1 minute')
+        )
+      LIMIT $3
+    `,
+    [minMinutesSinceLocationUpdate, reminderCooldownMinutes, limit],
+  );
+
+  return result.rows.map((row) => row.user_id);
+}
+
+async function expireStalePendingHelpRequests({ ttlHours, limit = 100 }) {
+  const result = await query(
+    `
+      WITH stale AS (
+        SELECT request_id
+        FROM help_requests
+        WHERE status = 'PENDING'
+          AND created_at <= CURRENT_TIMESTAMP - ($1::int * INTERVAL '1 hour')
+        ORDER BY created_at ASC
+        LIMIT $2
+      )
+      UPDATE help_requests hr
+      SET
+        status = 'CANCELLED',
+        cancelled_at = CURRENT_TIMESTAMP
+      FROM stale
+      WHERE hr.request_id = stale.request_id
+      RETURNING hr.request_id, hr.user_id
+    `,
+    [ttlHours, limit],
+  );
+
+  return result.rows;
+}
+
 module.exports = {
   insertNotification,
   listNotificationsByRecipient,
@@ -487,4 +582,7 @@ module.exports = {
   getNotificationDeliveryStats,
   listNotificationTypePreferencesByUserId,
   upsertNotificationTypePreference,
+  listUserIdsWithinRadius,
+  listAvailabilityReminderCandidates,
+  expireStalePendingHelpRequests,
 };

@@ -15,6 +15,9 @@ jest.mock('../../../../src/modules/notifications/repository', () => ({
   getNotificationDeliveryStats: jest.fn(),
   listNotificationTypePreferencesByUserId: jest.fn(),
   upsertNotificationTypePreference: jest.fn(),
+  listUserIdsWithinRadius: jest.fn(),
+  listAvailabilityReminderCandidates: jest.fn(),
+  expireStalePendingHelpRequests: jest.fn(),
 }));
 
 const repository = require('../../../../src/modules/notifications/repository');
@@ -31,6 +34,7 @@ const {
   updateMyNotificationTypePreference,
   getMyUnreadNotificationCount,
   getAdminNotificationStats,
+  createEmergencyBroadcast,
 } = require('../../../../src/modules/notifications/service');
 
 function createStoredNotification(overrides = {}) {
@@ -55,6 +59,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   repository.getNotificationPreferencesByUserId.mockResolvedValue({ userId: 'user_1', pushEnabled: true });
   repository.listNotificationTypePreferencesByUserId.mockResolvedValue([]);
+  repository.listUserIdsWithinRadius.mockResolvedValue([]);
 });
 
 describe('notifications service', () => {
@@ -273,5 +278,60 @@ describe('notifications service', () => {
     const result = await getMyUnreadNotificationCount('user_1');
 
     expect(result).toEqual({ unreadCount: 9 });
+  });
+
+  test('createEmergencyBroadcast rejects non-admin', async () => {
+    await expect(
+      createEmergencyBroadcast(
+        { userId: 'user_1', isAdmin: false },
+        {
+          broadcastId: 'broadcast_1',
+          title: 'Emergency',
+          body: 'Emergency body',
+          location: { latitude: 41, longitude: 29, radiusKm: 10 },
+          maxRecipients: 100,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  test('createEmergencyBroadcast fans out to recipients', async () => {
+    repository.listUserIdsWithinRadius.mockResolvedValue(['u1', 'u2']);
+    repository.insertNotification.mockImplementation(async ({ recipientUserId, type, title, body, entity, data }) => (
+      createStoredNotification({
+        id: `notif_${recipientUserId}`,
+        recipientUserId,
+        type,
+        title,
+        body,
+        entity,
+        data,
+      })
+    ));
+    repository.listActiveNotificationDevicesByUserId.mockResolvedValue([]);
+    repository.insertNotificationDelivery.mockResolvedValue(undefined);
+
+    const result = await createEmergencyBroadcast(
+      { userId: 'admin_1', isAdmin: true },
+      {
+        broadcastId: 'broadcast_1',
+        title: 'Emergency',
+        body: 'Emergency body',
+        location: { latitude: 41, longitude: 29, radiusKm: 10 },
+        maxRecipients: 100,
+      },
+    );
+
+    expect(repository.listUserIdsWithinRadius).toHaveBeenCalledWith({
+      latitude: 41,
+      longitude: 29,
+      radiusKm: 10,
+      limit: 100,
+    });
+    expect(result).toMatchObject({
+      broadcastId: 'broadcast_1',
+      recipientCount: 2,
+      deliveredCount: 2,
+    });
   });
 });
