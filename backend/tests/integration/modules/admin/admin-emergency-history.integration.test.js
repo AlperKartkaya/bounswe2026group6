@@ -268,6 +268,36 @@ describe('GET /api/admin/emergency-history', () => {
       'CANCELLED',
       'RESOLVED',
     ]);
+    expect(response.body.history[0]).toEqual(
+      expect.objectContaining({
+        requestId: 'req_resolved_new',
+        closedState: 'RESOLVED',
+        urgencyLevel: 'LOW',
+        priorityLevel: 'LOW',
+      }),
+    );
+    expect(response.body.history[0].openedAt).toEqual(expect.any(String));
+    expect(response.body.history[0].openDurationMinutes).toEqual(expect.any(Number));
+
+    expect(response.body.history[1]).toEqual(
+      expect.objectContaining({
+        requestId: 'req_cancelled_mid',
+        closedState: 'CANCELLED',
+        urgencyLevel: 'MEDIUM',
+        priorityLevel: 'MEDIUM',
+      }),
+    );
+    expect(response.body.history[1].openedAt).toEqual(expect.any(String));
+    expect(response.body.history[1].openDurationMinutes).toEqual(expect.any(Number));
+
+    expect(response.body.history[3]).toEqual(
+      expect.objectContaining({
+        requestId: 'req_resolved_old',
+        closedState: 'RESOLVED',
+        urgencyLevel: 'HIGH',
+        priorityLevel: 'HIGH',
+      }),
+    );
     expect(response.body.history.some((item) => item.requestId === 'req_pending_active')).toBe(false);
   });
 

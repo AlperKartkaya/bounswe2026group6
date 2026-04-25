@@ -306,10 +306,13 @@ export default function AdminEmergencyHistoryView() {
                         <table className="admin-region-table admin-history-table">
                             <thead>
                                 <tr>
+                                    <th>Opened At</th>
                                     <th>Closed At</th>
-                                    <th>Status</th>
+                                    <th>Closed State</th>
                                     <th>Type</th>
                                     <th>Urgency</th>
+                                    <th>Priority</th>
+                                    <th>Open (min)</th>
                                     <th>Region</th>
                                     <th>Description</th>
                                 </tr>
@@ -317,10 +320,13 @@ export default function AdminEmergencyHistoryView() {
                             <tbody>
                                 {items.map((item) => (
                                     <tr key={item.requestId}>
+                                        <td>{formatDateTime(item.openedAt)}</td>
                                         <td>{formatDateTime(item.closedAt)}</td>
-                                        <td>{formatTitleCase(item.status)}</td>
+                                        <td>{formatTitleCase(item.closedState || item.status)}</td>
                                         <td>{formatTitleCase(item.needType)}</td>
                                         <td>{formatTitleCase(item.urgencyLevel)}</td>
+                                        <td>{formatTitleCase(item.priorityLevel)}</td>
+                                        <td>{item.openDurationMinutes}</td>
                                         <td>{formatTitleCase(item.location.city)}</td>
                                         <td>{item.description}</td>
                                     </tr>

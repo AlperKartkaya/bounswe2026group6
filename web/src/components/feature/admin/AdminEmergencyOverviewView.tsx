@@ -27,6 +27,32 @@ function MetricTile({
     );
 }
 
+function formatDateTime(value: string | null) {
+    if (!value) {
+        return "-";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleString();
+}
+
+function formatTitleCase(value: string | null | undefined) {
+    if (!value) {
+        return "-";
+    }
+
+    return String(value)
+        .trim()
+        .toLocaleLowerCase("tr-TR")
+        .split(/\s+/)
+        .map((word) => (word ? word[0].toLocaleUpperCase("tr-TR") + word.slice(1) : word))
+        .join(" ");
+}
+
 export default function AdminEmergencyOverviewView() {
     const router = useRouter();
     const pathname = usePathname();
@@ -269,6 +295,45 @@ export default function AdminEmergencyOverviewView() {
                         <p className="admin-recent-line">Last 7d: {overview.recentActivity.cancelledLast7Days}</p>
                     </div>
                 </div>
+            </SectionCard>
+
+            <SectionCard>
+                <SectionHeader
+                    title="Active Operational Snapshot"
+                    subtitle="Live operational details for active emergencies."
+                />
+                {overview.activeOperational.length > 0 ? (
+                    <div className="admin-region-table-wrap">
+                        <table className="admin-region-table admin-history-table">
+                            <thead>
+                                <tr>
+                                    <th>Opened At</th>
+                                    <th>Status</th>
+                                    <th>Type</th>
+                                    <th>Urgency</th>
+                                    <th>Priority</th>
+                                    <th>Open (min)</th>
+                                    <th>Region</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {overview.activeOperational.map((item) => (
+                                    <tr key={item.requestId}>
+                                        <td>{formatDateTime(item.openedAt)}</td>
+                                        <td>{formatTitleCase(item.status)}</td>
+                                        <td>{formatTitleCase(item.needType)}</td>
+                                        <td>{formatTitleCase(item.urgencyLevel)}</td>
+                                        <td>{formatTitleCase(item.priorityLevel)}</td>
+                                        <td>{item.openDurationMinutes}</td>
+                                        <td>{formatTitleCase(item.location.city)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <p className="admin-subtle">No active emergencies to display.</p>
+                )}
             </SectionCard>
 
             <SectionCard>
