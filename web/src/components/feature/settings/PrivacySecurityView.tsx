@@ -10,6 +10,12 @@ import { ToggleSwitch } from "@/components/ui/selection/ToggleSwitch";
 import { clearAccessToken, getAccessToken } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { fetchMyProfile, patchMyPrivacy } from "@/lib/profile";
+import { LocationPreviewMap } from "@/components/feature/location/LocationPreviewMap";
+
+const DEFAULT_MAP_CENTER = {
+    latitude: 41.0082,
+    longitude: 28.9784,
+};
 
 export default function PrivacySecurityView() {
     const router = useRouter();
@@ -19,6 +25,10 @@ export default function PrivacySecurityView() {
     const [saving, setSaving] = React.useState(false);
     const [shareLocation, setShareLocation] = React.useState(false);
     const [initialShareLocation, setInitialShareLocation] = React.useState(false);
+    const [locationPreview, setLocationPreview] = React.useState<{
+        latitude: number;
+        longitude: number;
+    } | null>(null);
     const [error, setError] = React.useState("");
     const [info, setInfo] = React.useState("");
 
@@ -41,6 +51,18 @@ export default function PrivacySecurityView() {
                 const profile = await fetchMyProfile(token);
                 setShareLocation(profile.privacySettings.locationSharingEnabled);
                 setInitialShareLocation(profile.privacySettings.locationSharingEnabled);
+
+                if (
+                    typeof profile.locationProfile.latitude === "number" &&
+                    typeof profile.locationProfile.longitude === "number"
+                ) {
+                    setLocationPreview({
+                        latitude: profile.locationProfile.latitude,
+                        longitude: profile.locationProfile.longitude,
+                    });
+                } else {
+                    setLocationPreview(null);
+                }
             } catch (err) {
                 if (err instanceof ApiError && err.status === 401) {
                     redirectToLoginAfterAuthExpiry();
@@ -140,6 +162,33 @@ export default function PrivacySecurityView() {
                     <PrimaryButton onClick={handleSave} loading={saving}>
                         Save Privacy Settings
                     </PrimaryButton>
+                </div>
+
+                <div className="mt-5 grid gap-2">
+                    <h3 className="text-sm font-medium text-[color:var(--text-primary)]">
+                        Shared Location Preview
+                    </h3>
+                    <p className="text-sm text-[color:var(--text-secondary)]">
+                        Review the location that may be shared for emergency coordination.
+                    </p>
+                    {shareLocation ? (
+                        <LocationPreviewMap
+                            center={locationPreview || DEFAULT_MAP_CENTER}
+                            selectedPosition={locationPreview}
+                            interactionMode="readonly"
+                            heightClassName="h-56"
+                            zoom={locationPreview ? 13 : 11}
+                        />
+                    ) : (
+                        <HelperText>
+                            Turn on Share Current Location to show your saved location preview.
+                        </HelperText>
+                    )}
+                    {shareLocation && !locationPreview ? (
+                        <HelperText>
+                            No saved coordinates yet. Save your profile location to see it here.
+                        </HelperText>
+                    ) : null}
                 </div>
             </SectionCard>
 
