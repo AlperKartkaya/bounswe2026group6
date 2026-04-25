@@ -1,10 +1,15 @@
 package com.neph
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.neph.core.NephAppContext
@@ -30,6 +35,7 @@ class MainActivity : ComponentActivity() {
         AvailabilityRepository.initialize(applicationContext)
         ProfileRepository.initialize(applicationContext)
         RequestHelpRepository.initialize(applicationContext)
+        requestNotificationPermissionIfNeeded()
         PushTokenSync.syncCurrentToken()
         OfflineSyncScheduler.schedulePeriodicSync(applicationContext)
         OfflineSyncScheduler.enqueueSync(applicationContext, reason = "app-start")
@@ -39,6 +45,29 @@ class MainActivity : ComponentActivity() {
         setContent {
             NephApp()
         }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+
+        if (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            REQUEST_POST_NOTIFICATIONS
+        )
+    }
+
+    companion object {
+        private const val REQUEST_POST_NOTIFICATIONS = 1001
     }
 }
 

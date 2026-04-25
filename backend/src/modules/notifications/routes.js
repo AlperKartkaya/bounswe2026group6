@@ -1,6 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { requireAuth } = require('../auth/middleware');
+const { requireAuth, requireAdmin } = require('../auth/middleware');
 const {
   createNotification,
   getMyNotifications,
@@ -28,7 +28,7 @@ const writeLimiter = rateLimit({
 
 notificationsRouter.use(requireAuth);
 
-notificationsRouter.post('/', writeLimiter, createNotification);
+notificationsRouter.post('/', writeLimiter, requireAdmin, createNotification);
 notificationsRouter.get('/', getMyNotifications);
 notificationsRouter.patch('/read-all', writeLimiter, markAllAsRead);
 notificationsRouter.patch('/:notificationId/read', writeLimiter, markAsRead);

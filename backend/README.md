@@ -168,7 +168,7 @@ Hybrid location payload example:
 
 Notification module endpoints:
 
-- `POST /api/notifications`
+- `POST /api/notifications` (admin-only manual trigger endpoint)
 - `GET /api/notifications?limit=<int>&cursor=<base64>&unreadOnly=<bool>`
 - `PATCH /api/notifications/:notificationId/read`
 - `PATCH /api/notifications/read-all`

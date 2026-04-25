@@ -44,6 +44,25 @@ async function seedActiveUser(userId, email = `${userId}@example.com`) {
   );
 }
 
+async function createNotificationAsAdmin(app, adminToken, recipientUserId, overridePayload = {}) {
+  const basePayload = {
+    type: 'SYSTEM',
+    title: 'Test notification',
+    body: 'Test body',
+    recipientUserId,
+    data: {},
+  };
+
+  return request(app)
+    .post('/api/notifications')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({
+      ...basePayload,
+      ...overridePayload,
+      recipientUserId,
+    });
+}
+
 beforeEach(async () => {
   await query(`
     TRUNCATE TABLE
@@ -141,17 +160,14 @@ describe('notifications integration', () => {
   test('type preferences and unread-count endpoints work', async () => {
     const app = createTestApp();
     await seedActiveUser('user_notif_type_1');
+    await seedActiveUser('user_notif_type_admin');
     const token = buildAuthToken('user_notif_type_1');
+    const adminToken = buildAuthToken('user_notif_type_admin', { isAdmin: true });
 
-    await request(app)
-      .post('/api/notifications')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        type: 'SYSTEM',
-        title: 't1',
-        body: 'b1',
-        data: {},
-      });
+    await createNotificationAsAdmin(app, adminToken, 'user_notif_type_1', {
+      title: 't1',
+      body: 'b1',
+    });
 
     const unread = await request(app)
       .get('/api/notifications/unread-count')
@@ -218,24 +234,23 @@ describe('notifications integration', () => {
   test('POST creates notification and GET lists it with mobile payload shape', async () => {
     const app = createTestApp();
     await seedActiveUser('user_notif_1');
+    await seedActiveUser('user_notif_admin_creator_1');
     const token = buildAuthToken('user_notif_1');
+    const adminToken = buildAuthToken('user_notif_admin_creator_1', { isAdmin: true });
 
-    const createResponse = await request(app)
-      .post('/api/notifications')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        type: 'HELP_REQUEST_STATUS_CHANGED',
-        title: 'Request updated',
-        body: 'Your request is matched with a volunteer.',
-        entity: {
-          type: 'HELP_REQUEST',
-          id: 'req_123',
-        },
-        data: {
-          screen: 'request-details',
-          requestId: 'req_123',
-        },
-      });
+    const createResponse = await createNotificationAsAdmin(app, adminToken, 'user_notif_1', {
+      type: 'HELP_REQUEST_STATUS_CHANGED',
+      title: 'Request updated',
+      body: 'Your request is matched with a volunteer.',
+      entity: {
+        type: 'HELP_REQUEST',
+        id: 'req_123',
+      },
+      data: {
+        screen: 'request-details',
+        requestId: 'req_123',
+      },
+    });
 
     expect(createResponse.status).toBe(201);
     expect(createResponse.body.notification).toMatchObject({
@@ -274,17 +289,14 @@ describe('notifications integration', () => {
   test('PATCH /:id/read marks notification as read idempotently', async () => {
     const app = createTestApp();
     await seedActiveUser('user_notif_2');
+    await seedActiveUser('user_notif_admin_creator_2');
     const token = buildAuthToken('user_notif_2');
+    const adminToken = buildAuthToken('user_notif_admin_creator_2', { isAdmin: true });
 
-    const createResponse = await request(app)
-      .post('/api/notifications')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        type: 'SYSTEM',
-        title: 'Welcome',
-        body: 'Welcome to notifications.',
-        data: {},
-      });
+    const createResponse = await createNotificationAsAdmin(app, adminToken, 'user_notif_2', {
+      title: 'Welcome',
+      body: 'Welcome to notifications.',
+    });
 
     const notificationId = createResponse.body.notification.id;
 
@@ -308,27 +320,19 @@ describe('notifications integration', () => {
   test('PATCH /read-all marks all unread notifications and returns unread count', async () => {
     const app = createTestApp();
     await seedActiveUser('user_notif_3');
+    await seedActiveUser('user_notif_admin_creator_3');
     const token = buildAuthToken('user_notif_3');
+    const adminToken = buildAuthToken('user_notif_admin_creator_3', { isAdmin: true });
 
-    await request(app)
-      .post('/api/notifications')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        type: 'SYSTEM',
-        title: 'A',
-        body: 'A',
-        data: {},
-      });
+    await createNotificationAsAdmin(app, adminToken, 'user_notif_3', {
+      title: 'A',
+      body: 'A',
+    });
 
-    await request(app)
-      .post('/api/notifications')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        type: 'SYSTEM',
-        title: 'B',
-        body: 'B',
-        data: {},
-      });
+    await createNotificationAsAdmin(app, adminToken, 'user_notif_3', {
+      title: 'B',
+      body: 'B',
+    });
 
     const readAllResponse = await request(app)
       .patch('/api/notifications/read-all')
@@ -343,28 +347,20 @@ describe('notifications integration', () => {
     const app = createTestApp();
     await seedActiveUser('user_notif_4');
     await seedActiveUser('user_notif_5');
+    await seedActiveUser('user_notif_admin_creator_4');
     const tokenA = buildAuthToken('user_notif_4');
     const tokenB = buildAuthToken('user_notif_5');
+    const adminToken = buildAuthToken('user_notif_admin_creator_4', { isAdmin: true });
 
-    await request(app)
-      .post('/api/notifications')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .send({
-        type: 'SYSTEM',
-        title: 'A1',
-        body: 'A1',
-        data: {},
-      });
+    await createNotificationAsAdmin(app, adminToken, 'user_notif_4', {
+      title: 'A1',
+      body: 'A1',
+    });
 
-    await request(app)
-      .post('/api/notifications')
-      .set('Authorization', `Bearer ${tokenB}`)
-      .send({
-        type: 'SYSTEM',
-        title: 'B1',
-        body: 'B1',
-        data: {},
-      });
+    await createNotificationAsAdmin(app, adminToken, 'user_notif_5', {
+      title: 'B1',
+      body: 'B1',
+    });
 
     const listA = await request(app)
       .get('/api/notifications')
@@ -381,5 +377,24 @@ describe('notifications integration', () => {
     expect(listB.status).toBe(200);
     expect(listB.body.items).toHaveLength(1);
     expect(listB.body.items[0].title).toBe('B1');
+  });
+
+  test('POST /api/notifications is forbidden for non-admin users', async () => {
+    const app = createTestApp();
+    await seedActiveUser('user_notif_non_admin_1');
+    const token = buildAuthToken('user_notif_non_admin_1');
+
+    const response = await request(app)
+      .post('/api/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'SYSTEM',
+        title: 'Denied',
+        body: 'Denied',
+        data: {},
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('FORBIDDEN');
   });
 });

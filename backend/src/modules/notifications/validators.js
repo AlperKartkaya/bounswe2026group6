@@ -30,13 +30,29 @@ function validateOptionalString(name, value, errors, { maxLength = 255 } = {}) {
 }
 
 function validateRequiredString(name, value, errors, options) {
-  const normalized = validateOptionalString(name, value, errors, options);
-  if (normalized === null) {
+  const maxLength = options?.maxLength ?? 255;
+
+  if (value == null) {
     errors.push(`\`${name}\` is required.`);
     return '';
   }
 
-  return normalized;
+  if (typeof value !== 'string') {
+    errors.push(`\`${name}\` must be a string.`);
+    return '';
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    errors.push(`\`${name}\` must not be empty.`);
+    return '';
+  }
+
+  if (trimmed.length > maxLength) {
+    errors.push(`\`${name}\` must be ${maxLength} characters or fewer.`);
+  }
+
+  return trimmed;
 }
 
 function validateCreateNotificationPayload(payload) {
