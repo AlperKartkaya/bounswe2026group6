@@ -1019,6 +1019,7 @@ describe('help-requests integration', () => {
 
 		// Initially, no helper assigned
 		expect(createRes.body.request.helper).toBeNull();
+		expect(createRes.body.request.helpers).toEqual([]);
 
 		// Helper toggles availability → gets assigned
 		const toggleRes = await request(app)
@@ -1036,6 +1037,8 @@ describe('help-requests integration', () => {
 
 		expect(getRes.status).toBe(200);
 		expect(getRes.body.request.helper).toBeTruthy();
+		expect(getRes.body.request.helpers).toHaveLength(1);
+		expect(getRes.body.request.helpers[0].firstName).toBe('Mehmet');
 		expect(getRes.body.request.helper.firstName).toBe('Mehmet');
 		expect(getRes.body.request.helper.lastName).toBe('Kaya');
 		expect(getRes.body.request.helper.phone).toBe(5301234567);
@@ -1090,10 +1093,11 @@ describe('help-requests integration', () => {
 		expect(listRes.body.requests).toHaveLength(1);
 		expect(listRes.body.requests[0].id).toBe(requestId);
 		expect(listRes.body.requests[0].helper).toBeTruthy();
+		expect(listRes.body.requests[0].helpers).toHaveLength(1);
 		expect(listRes.body.requests[0].helper.expertise).toBe('Medical');
 	});
 
-	test('request reads keep a single deterministic helper when multiple active assignments exist', async () => {
+	test('request reads expose deterministic ordered helpers while preserving single-helper compatibility', async () => {
 		const app = createTestApp();
 		const requesterId = 'user_hr_multi_helper_requester';
 		const firstHelperId = 'user_hr_multi_helper_first';
@@ -1154,8 +1158,13 @@ describe('help-requests integration', () => {
 		expect(detailRes.status).toBe(200);
 		expect(detailRes.body.request.status).toBe('MATCHED');
 		expect(detailRes.body.request.helper).toBeTruthy();
+		expect(detailRes.body.request.helpers).toHaveLength(2);
 		expect(detailRes.body.request.helper.firstName).toBe('Ece');
 		expect(detailRes.body.request.helper.phone).toBe(5301111111);
+		expect(detailRes.body.request.helpers[0].firstName).toBe('Ece');
+		expect(detailRes.body.request.helpers[0].phone).toBe(5301111111);
+		expect(detailRes.body.request.helpers[1].firstName).toBe('Kerem');
+		expect(detailRes.body.request.helpers[1].phone).toBe(5302222222);
 
 		const listRes = await request(app)
 			.get('/api/help-requests')
@@ -1164,7 +1173,75 @@ describe('help-requests integration', () => {
 		expect(listRes.status).toBe(200);
 		expect(listRes.body.requests).toHaveLength(1);
 		expect(listRes.body.requests[0].id).toBe(requestId);
+		expect(listRes.body.requests[0].helpers).toHaveLength(2);
 		expect(listRes.body.requests[0].helper.firstName).toBe('Ece');
+		expect(listRes.body.requests[0].helpers[1].firstName).toBe('Kerem');
+	});
+
+	test('request reads keep blank helper entries out of legacy helper compatibility field', async () => {
+		const app = createTestApp();
+		const requesterId = 'user_hr_blank_helper_requester';
+		const blankHelperId = 'user_hr_blank_helper_responder';
+
+		await seedActiveUser(requesterId, 'blank-helper-requester@example.com');
+		await seedActiveUser(blankHelperId, 'blank-helper-responder@example.com');
+
+		const requesterToken = buildAuthToken(requesterId);
+
+		await query(
+			`INSERT INTO user_profiles (profile_id, user_id, first_name, last_name, phone_number)
+			 VALUES ('prf_blank_helper', $1, '   ', '', NULL)`,
+			[blankHelperId],
+		);
+		await query(
+			`INSERT INTO expertise (expertise_id, profile_id, profession, expertise_area, is_verified)
+			 VALUES ('exp_blank_helper', 'prf_blank_helper', '   ', '', FALSE)`,
+		);
+
+		const createRes = await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${requesterToken}`)
+			.send(buildCreatePayload({ helpTypes: ['food'], needType: 'food' }));
+
+		const requestId = createRes.body.request.id;
+
+		await seedVolunteer({ volunteerId: 'vol_blank_helper', userId: blankHelperId });
+
+		await query(
+			`UPDATE help_requests SET status = 'ASSIGNED' WHERE request_id = $1`,
+			[requestId],
+		);
+
+		await query(
+			`INSERT INTO assignments (assignment_id, volunteer_id, request_id, assigned_at, is_cancelled)
+			 VALUES ('asg_blank_helper', 'vol_blank_helper', $1, '2026-04-23T08:00:00.000Z', FALSE)`,
+			[requestId],
+		);
+
+		const detailRes = await request(app)
+			.get(`/api/help-requests/${requestId}`)
+			.set('Authorization', `Bearer ${requesterToken}`);
+
+		expect(detailRes.status).toBe(200);
+		expect(detailRes.body.request.status).toBe('MATCHED');
+		expect(detailRes.body.request.helpers).toHaveLength(1);
+		expect(detailRes.body.request.helpers[0]).toEqual({
+			firstName: null,
+			lastName: null,
+			phone: null,
+			profession: null,
+			expertise: null,
+		});
+		expect(detailRes.body.request.helper).toBeNull();
+
+		const listRes = await request(app)
+			.get('/api/help-requests')
+			.set('Authorization', `Bearer ${requesterToken}`);
+
+		expect(listRes.status).toBe(200);
+		expect(listRes.body.requests).toHaveLength(1);
+		expect(listRes.body.requests[0].helpers).toHaveLength(1);
+		expect(listRes.body.requests[0].helper).toBeNull();
 	});
 
 	test('help request without assignment has null helper', async () => {
@@ -1186,6 +1263,7 @@ describe('help-requests integration', () => {
 
 		expect(getRes.status).toBe(200);
 		expect(getRes.body.request.helper).toBeNull();
+		expect(getRes.body.request.helpers).toEqual([]);
 	});
 
 	test('POST /api/help-requests auto-assigns to already available volunteer', async () => {
