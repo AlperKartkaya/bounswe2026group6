@@ -14,6 +14,7 @@ const {
   getAssignmentById,
   findActiveAssignmentsByRequestId,
   cancelAssignment,
+  findRequestOwnerByRequestId,
 } = require('./repository');
 const { createNotification } = require('../notifications/service');
 
@@ -72,6 +73,33 @@ async function notifyVolunteerTaskUpdated(volunteerUserId, requestId, actorUserI
   }
 }
 
+async function notifyRequestOwnerAssigned(requestRow, actorUserId) {
+  if (!requestRow || !requestRow.user_id || !requestRow.request_id) {
+    return;
+  }
+
+  try {
+    await createNotification({
+      recipientUserId: requestRow.user_id,
+      actorUserId: actorUserId || null,
+      type: 'HELP_REQUEST_STATUS_CHANGED',
+      title: 'Help request status updated',
+      body: 'A volunteer has been assigned to your help request.',
+      entity: {
+        type: 'HELP_REQUEST',
+        id: requestRow.request_id,
+      },
+      data: {
+        screen: 'my-help-requests',
+        requestId: requestRow.request_id,
+        internalStatus: 'ASSIGNED',
+      },
+    });
+  } catch (error) {
+    console.error('availability.notifyRequestOwnerAssigned failed', error);
+  }
+}
+
 async function runAssignmentCycle() {
   const availableVolunteers = await findAvailableVolunteersForMatching();
   const sortedVolunteers = [...availableVolunteers].sort((leftVolunteer, rightVolunteer) => {
@@ -115,6 +143,7 @@ async function runAssignmentCycle() {
     }
 
     await markRequestAssignedIfPending(matchingRequest.request_id);
+    await notifyRequestOwnerAssigned(matchingRequest, volunteer.user_id);
     await notifyVolunteerTaskAssigned(volunteer.user_id, matchingRequest.request_id, volunteer.user_id);
     createdAssignments.push(assignment);
   }
@@ -330,6 +359,8 @@ async function getAvailabilityStatus(userId) {
 }
 
 async function tryToAssignRequest(requestId) {
+  const requestOwner = await findRequestOwnerByRequestId(requestId);
+
   while (true) {
     const volunteer = await findMatchingVolunteerForRequest(requestId);
 
@@ -344,6 +375,13 @@ async function tryToAssignRequest(requestId) {
     }
 
     await markRequestAssignedIfPending(requestId);
+    await notifyRequestOwnerAssigned(
+      {
+        request_id: requestId,
+        user_id: requestOwner ? requestOwner.user_id : null,
+      },
+      volunteer.user_id,
+    );
     await notifyVolunteerTaskAssigned(volunteer.user_id, requestId, volunteer.user_id);
   }
 

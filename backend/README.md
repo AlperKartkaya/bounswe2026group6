@@ -220,7 +220,7 @@ Push env:
 - `PUSH_DELIVERY_MODE=fcm` enables real FCM push delivery via Firebase Admin SDK
 - `FIREBASE_SERVICE_ACCOUNT_PATH=secrets/firebase-service-account.json` points to service account JSON (relative to `backend/`)
 - `NOTIFICATION_RETENTION_DAYS=90` controls cleanup horizon for old notifications
-- `NOTIFICATION_JOBS_ENABLED=true` enables periodic notification jobs
+- `NOTIFICATION_JOBS_ENABLED=true` enables periodic notification jobs (default is `false`)
 - `NOTIFICATION_JOB_INTERVAL_MS=300000` controls job runner frequency
 - `NOTIFICATION_JOB_BATCH_SIZE=100` max records processed per cycle
 - `NOTIFICATION_AVAILABILITY_REMINDER_MINUTES=120` reminder threshold for available volunteers

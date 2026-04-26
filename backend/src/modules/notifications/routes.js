@@ -41,7 +41,7 @@ notificationsRouter.patch('/preferences', writeLimiter, patchPreferences);
 notificationsRouter.get('/preferences/types', getTypePreferences);
 notificationsRouter.patch('/preferences/types', writeLimiter, patchTypePreference);
 notificationsRouter.get('/unread-count', getUnreadCount);
-notificationsRouter.get('/admin/stats', getAdminStats);
+notificationsRouter.get('/admin/stats', requireAdmin, getAdminStats);
 notificationsRouter.post('/admin/broadcast/emergency', writeLimiter, requireAdmin, postEmergencyBroadcast);
 
 module.exports = {

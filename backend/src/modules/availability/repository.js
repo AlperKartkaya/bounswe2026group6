@@ -714,6 +714,20 @@ async function cancelAssignment(assignmentId) {
   return result.rows[0];
 }
 
+async function findRequestOwnerByRequestId(requestId) {
+  const result = await query(
+    `
+      SELECT request_id, user_id
+      FROM help_requests
+      WHERE request_id = $1
+      LIMIT 1
+    `,
+    [requestId],
+  );
+
+  return result.rows[0] || null;
+}
+
 module.exports = {
   buildRequestMatchContext,
   findVolunteerByUserId,
@@ -735,4 +749,5 @@ module.exports = {
   findAssignmentByRequestId,
   findActiveAssignmentsByRequestId,
   cancelAssignment,
+  findRequestOwnerByRequestId,
 };

@@ -43,7 +43,7 @@ const env = {
   },
   notifications: {
     retentionDays: readNumber(process.env.NOTIFICATION_RETENTION_DAYS, 90),
-    jobsEnabled: (process.env.NOTIFICATION_JOBS_ENABLED || 'true').toLowerCase() !== 'false',
+    jobsEnabled: (process.env.NOTIFICATION_JOBS_ENABLED || 'false').toLowerCase() === 'true',
     jobIntervalMs: readNumber(process.env.NOTIFICATION_JOB_INTERVAL_MS, 5 * 60 * 1000),
     jobBatchSize: readNumber(process.env.NOTIFICATION_JOB_BATCH_SIZE, 100),
     availabilityReminderMinutes: readNumber(process.env.NOTIFICATION_AVAILABILITY_REMINDER_MINUTES, 120),

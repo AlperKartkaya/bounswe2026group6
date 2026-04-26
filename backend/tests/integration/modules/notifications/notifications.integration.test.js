@@ -246,6 +246,19 @@ describe('notifications integration', () => {
     expect(typeof adminResult.body.unreadCount).toBe('number');
   });
 
+  test('admin stats endpoint rejects token claim without admin DB record', async () => {
+    const app = createTestApp();
+    await seedActiveUser('user_notif_claim_admin_only');
+    const claimOnlyAdminToken = buildAuthToken('user_notif_claim_admin_only', { isAdmin: true });
+
+    const response = await request(app)
+      .get('/api/notifications/admin/stats')
+      .set('Authorization', `Bearer ${claimOnlyAdminToken}`);
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('FORBIDDEN');
+  });
+
   test('POST creates notification and GET lists it with mobile payload shape', async () => {
     const app = createTestApp();
     await seedActiveUser('user_notif_1');

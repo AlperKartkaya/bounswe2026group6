@@ -9,8 +9,12 @@ const {
   cancelAssignmentByRequestId,
 } = require('../../../../src/modules/availability/service');
 const repository = require('../../../../src/modules/availability/repository');
+const { createNotification } = require('../../../../src/modules/notifications/service');
 
 jest.mock('../../../../src/modules/availability/repository');
+jest.mock('../../../../src/modules/notifications/service', () => ({
+  createNotification: jest.fn().mockResolvedValue({ id: 'notif_1' }),
+}));
 
 describe('Availability Service', () => {
   const userId = 'user_123';
@@ -24,6 +28,7 @@ describe('Availability Service', () => {
     repository.findMatchingVolunteerForRequest.mockResolvedValue(null);
     repository.markRequestAssignedIfPending.mockResolvedValue(null);
     repository.syncRequestStatusPreservingInProgress.mockResolvedValue(null);
+    repository.findRequestOwnerByRequestId.mockResolvedValue({ request_id: 'req_123', user_id: 'owner_123' });
   });
 
   describe('setAvailability', () => {
@@ -295,6 +300,28 @@ describe('Availability Service', () => {
       expect(repository.createAssignment).toHaveBeenCalledWith('vol_456', 'req_123');
       expect(repository.markRequestAssignedIfPending).toHaveBeenCalledWith('req_123');
       expect(result).toBe(true);
+    });
+
+    it('creates notifications for both helper and request owner on assignment', async () => {
+      repository.findRequestOwnerByRequestId.mockResolvedValue({ request_id: 'req_123', user_id: 'owner_123' });
+      repository.findMatchingVolunteerForRequest
+        .mockResolvedValueOnce({ volunteer_id: 'vol_123', user_id: 'helper_123' })
+        .mockResolvedValueOnce(null);
+      repository.createAssignment.mockResolvedValueOnce(assignment);
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([assignment]);
+
+      await tryToAssignRequest('req_123');
+
+      expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({
+        recipientUserId: 'owner_123',
+        type: 'HELP_REQUEST_STATUS_CHANGED',
+        entity: { type: 'HELP_REQUEST', id: 'req_123' },
+      }));
+      expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({
+        recipientUserId: 'helper_123',
+        type: 'TASK_ASSIGNED',
+        entity: { type: 'HELP_REQUEST', id: 'req_123' },
+      }));
     });
 
     it('stops cleanly when guarded assignment creation returns null', async () => {
