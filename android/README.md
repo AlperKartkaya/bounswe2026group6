@@ -76,3 +76,16 @@ Notes:
 
 - The instrumentation suite runs the app against a test-only MockWebServer endpoint (`http://127.0.0.1:13006/api`) so production networking code still performs real HTTP requests while tests stay deterministic.
 - The `e2e` build type is used only for instrumentation tests; release builds keep their production API base URL and do not include the fake backend.
+
+## Release CI secrets
+
+`android/app/google-services.json` is intentionally gitignored. The Android release workflow reconstructs it from a GitHub Actions secret at build time.
+
+Required repository secrets for `.github/workflows/android-release.yml`:
+
+- `ANDROID_GOOGLE_SERVICES_JSON_BASE64` (base64 of `google-services.json`)
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+- `NEPH_RELEASE_API_BASE_URL`

@@ -341,6 +341,15 @@ async function findVolunteerByUserId(userId) {
   return result.rows[0] || null;
 }
 
+async function findVolunteerById(volunteerId) {
+  const sql = `
+    SELECT * FROM volunteers
+    WHERE volunteer_id = $1;
+  `;
+  const result = await query(sql, [volunteerId]);
+  return result.rows[0] || null;
+}
+
 async function createVolunteer(userId) {
   const volunteerId = makeId('vol');
   const sql = `
@@ -705,9 +714,24 @@ async function cancelAssignment(assignmentId) {
   return result.rows[0];
 }
 
+async function findRequestOwnerByRequestId(requestId) {
+  const result = await query(
+    `
+      SELECT request_id, user_id
+      FROM help_requests
+      WHERE request_id = $1
+      LIMIT 1
+    `,
+    [requestId],
+  );
+
+  return result.rows[0] || null;
+}
+
 module.exports = {
   buildRequestMatchContext,
   findVolunteerByUserId,
+  findVolunteerById,
   createVolunteer,
   updateVolunteerAvailability,
   createAvailabilityRecord,
@@ -725,4 +749,5 @@ module.exports = {
   findAssignmentByRequestId,
   findActiveAssignmentsByRequestId,
   cancelAssignment,
+  findRequestOwnerByRequestId,
 };

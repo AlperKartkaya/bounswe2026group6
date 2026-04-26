@@ -1,5 +1,6 @@
 const {
   findVolunteerByUserId,
+  findVolunteerById,
   createVolunteer,
   updateVolunteerAvailability,
   createAvailabilityRecord,
@@ -13,7 +14,91 @@ const {
   getAssignmentById,
   findActiveAssignmentsByRequestId,
   cancelAssignment,
+  findRequestOwnerByRequestId,
 } = require('./repository');
+const { createNotification } = require('../notifications/service');
+
+async function notifyVolunteerTaskAssigned(volunteerUserId, requestId, actorUserId) {
+  if (!volunteerUserId || !requestId) {
+    return;
+  }
+
+  try {
+    await createNotification({
+      recipientUserId: volunteerUserId,
+      actorUserId: actorUserId || null,
+      type: 'TASK_ASSIGNED',
+      title: 'New help request assigned',
+      body: 'A help request has been matched to you.',
+      entity: {
+        type: 'HELP_REQUEST',
+        id: requestId,
+      },
+      data: {
+        screen: 'assignment',
+        requestId,
+        kind: 'helper_assignment',
+      },
+    });
+  } catch (error) {
+    console.error('availability.notifyVolunteerTaskAssigned failed', error);
+  }
+}
+
+async function notifyVolunteerTaskUpdated(volunteerUserId, requestId, actorUserId, reason) {
+  if (!volunteerUserId || !requestId) {
+    return;
+  }
+
+  try {
+    await createNotification({
+      recipientUserId: volunteerUserId,
+      actorUserId: actorUserId || null,
+      type: 'TASK_UPDATED',
+      title: 'Assigned request updated',
+      body: 'An assigned help request has changed status.',
+      entity: {
+        type: 'HELP_REQUEST',
+        id: requestId,
+      },
+      data: {
+        screen: 'assignment',
+        requestId,
+        kind: 'helper_assignment_update',
+        reason: reason || 'updated',
+      },
+    });
+  } catch (error) {
+    console.error('availability.notifyVolunteerTaskUpdated failed', error);
+  }
+}
+
+async function notifyRequestOwnerAssigned(requestRow, actorUserId) {
+  if (!requestRow || !requestRow.user_id || !requestRow.request_id) {
+    return;
+  }
+
+  try {
+    await createNotification({
+      recipientUserId: requestRow.user_id,
+      actorUserId: actorUserId || null,
+      type: 'HELP_REQUEST_STATUS_CHANGED',
+      title: 'Help request status updated',
+      body: 'A volunteer has been assigned to your help request.',
+      entity: {
+        type: 'HELP_REQUEST',
+        id: requestRow.request_id,
+      },
+      data: {
+        screen: 'my-help-requests',
+        requestId: requestRow.request_id,
+        internalStatus: 'ASSIGNED',
+      },
+    });
+  } catch (error) {
+    console.error('availability.notifyRequestOwnerAssigned failed', error);
+  }
+}
 
 async function runAssignmentCycle() {
   const availableVolunteers = await findAvailableVolunteersForMatching();
@@ -58,6 +143,8 @@ async function runAssignmentCycle() {
     }
 
     await markRequestAssignedIfPending(matchingRequest.request_id);
+    await notifyRequestOwnerAssigned(matchingRequest, volunteer.user_id);
+    await notifyVolunteerTaskAssigned(volunteer.user_id, matchingRequest.request_id, volunteer.user_id);
     createdAssignments.push(assignment);
   }
 
@@ -82,11 +169,9 @@ async function setAvailability(userId, { isAvailable, latitude, longitude }) {
     longitude
   );
 
-  // Log to availability_records
   await createAvailabilityRecord(volunteer.volunteer_id, isAvailable, false);
 
   let assignment = null;
-  // If volunteer just became available, try to match them with a request
   if (isAvailable) {
     const existingAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
     if (!existingAssignment) {
@@ -96,9 +181,9 @@ async function setAvailability(userId, { isAvailable, latitude, longitude }) {
       assignment = existingAssignment;
     }
   } else {
-    // If volunteer just became unavailable, cancel their active assignments
     const activeAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
     if (activeAssignment) {
+      await notifyVolunteerTaskUpdated(volunteer.user_id, activeAssignment.request_id, userId, 'volunteer_unavailable');
       await cancelAssignment(activeAssignment.assignment_id);
       await syncRequestStatusFromAssignments(activeAssignment.request_id);
       await runAssignmentCycle();
@@ -117,9 +202,7 @@ async function syncAvailability(userId, { records }) {
     volunteer = await createVolunteer(userId);
   }
 
-  // For MVP, we just store the sync records and set the latest status
   if (records.length > 0) {
-    // Sort by timestamp to find the latest
     const sortedRecords = [...records].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     const latest = sortedRecords[0];
 
@@ -138,12 +221,11 @@ async function syncAvailability(userId, { records }) {
   const updatedVolunteer = await findVolunteerByUserId(userId);
   let currentAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
 
-  // If volunteer is now available and has no assignment, try to match
   if (updatedVolunteer.is_available && !currentAssignment) {
     await runAssignmentCycle();
     currentAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
   } else if (!updatedVolunteer.is_available && currentAssignment) {
-    // If volunteer is now unavailable, cancel their active assignment
+    await notifyVolunteerTaskUpdated(volunteer.user_id, currentAssignment.request_id, userId, 'sync_marked_unavailable');
     await cancelAssignment(currentAssignment.assignment_id);
     await syncRequestStatusFromAssignments(currentAssignment.request_id);
     await runAssignmentCycle();
@@ -183,17 +265,21 @@ async function cancelMyAssignment(userId, { assignmentId }) {
     throw error;
   }
 
+  await notifyVolunteerTaskUpdated(userId, assignment.request_id, userId, 'volunteer_cancelled_assignment');
   await cancelAssignment(assignmentId);
   await syncRequestStatusFromAssignments(assignment.request_id);
 
-  // Volunteer becomes unavailable
-  await updateVolunteerAvailability(volunteer.volunteer_id, false, volunteer.last_known_latitude, volunteer.last_known_longitude);
+  await updateVolunteerAvailability(
+    volunteer.volunteer_id,
+    false,
+    volunteer.last_known_latitude,
+    volunteer.last_known_longitude,
+  );
   await createAvailabilityRecord(volunteer.volunteer_id, false, false);
 
-  // Auto-assign the request to someone else if possible
   await runAssignmentCycle();
 
-  return { 
+  return {
     message: 'Assignment cancelled, you are now unavailable, and matching has been refreshed',
     volunteerStatus: 'UNAVAILABLE'
   };
@@ -203,6 +289,13 @@ async function cancelAssignmentByRequestId(requestId) {
   const assignments = await findActiveAssignmentsByRequestId(requestId);
 
   for (const assignment of assignments) {
+    const volunteer = await findVolunteerById(assignment.volunteer_id);
+    await notifyVolunteerTaskUpdated(
+      volunteer ? volunteer.user_id : null,
+      requestId,
+      null,
+      'assignment_cancelled_by_request_update',
+    );
     await cancelAssignment(assignment.assignment_id);
   }
 
@@ -226,6 +319,7 @@ async function resolveMyAssignment(userId, { requestId }) {
     throw error;
   }
 
+  await notifyVolunteerTaskUpdated(userId, requestId, userId, 'volunteer_resolved_assignment');
   await cancelAssignment(assignment.assignment_id);
   await syncRequestStatusFromAssignments(requestId);
 
@@ -239,7 +333,7 @@ async function resolveMyAssignment(userId, { requestId }) {
 
   await runAssignmentCycle();
 
-  return { 
+  return {
     message: 'Assignment resolved for this volunteer, you are now unavailable, and matching has been refreshed',
     newAssignment: null
   };
@@ -248,8 +342,6 @@ async function resolveMyAssignment(userId, { requestId }) {
 async function getAvailabilityStatus(userId) {
   let volunteer = await findVolunteerByUserId(userId);
   if (!volunteer) {
-    // If volunteer record doesn't exist, they are not available by default
-    // We could create one, but it's cleaner to just return false if it doesn't exist yet
     return {
       isAvailable: false,
       volunteer: null,
@@ -258,7 +350,7 @@ async function getAvailabilityStatus(userId) {
   }
 
   const assignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
-  
+
   return {
     isAvailable: volunteer.is_available,
     volunteer,
@@ -267,6 +359,8 @@ async function getAvailabilityStatus(userId) {
 }
 
 async function tryToAssignRequest(requestId) {
+  const requestOwner = await findRequestOwnerByRequestId(requestId);
+
   while (true) {
     const volunteer = await findMatchingVolunteerForRequest(requestId);
 
@@ -281,6 +375,14 @@ async function tryToAssignRequest(requestId) {
     }
 
     await markRequestAssignedIfPending(requestId);
+    await notifyRequestOwnerAssigned(
+      {
+        request_id: requestId,
+        user_id: requestOwner ? requestOwner.user_id : null,
+      },
+      volunteer.user_id,
+    );
+    await notifyVolunteerTaskAssigned(volunteer.user_id, requestId, volunteer.user_id);
   }
 
   const activeAssignments = await findActiveAssignmentsByRequestId(requestId);

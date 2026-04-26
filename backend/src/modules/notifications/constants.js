@@ -1,0 +1,11 @@
+const NOTIFICATION_TYPES = Object.freeze([
+  'TASK_ASSIGNED',
+  'TASK_UPDATED',
+  'HELP_REQUEST_CREATED',
+  'HELP_REQUEST_STATUS_CHANGED',
+  'SYSTEM',
+]);
+
+module.exports = {
+  NOTIFICATION_TYPES,
+};
