@@ -4,14 +4,16 @@ const {
   createVolunteer,
   updateVolunteerAvailability,
   createAvailabilityRecord,
+  findAvailableVolunteersForMatching,
   findMatchingRequestForVolunteer,
+  findMatchingVolunteerForRequest,
   createAssignment,
-  updateRequestStatus,
+  markRequestAssignedIfPending,
+  syncRequestStatusPreservingInProgress,
   getAssignmentByVolunteerId,
   getAssignmentById,
-  findAssignmentByRequestId,
+  findActiveAssignmentsByRequestId,
   cancelAssignment,
-  findMatchingVolunteerForRequest,
 } = require('./repository');
 const { createNotification } = require('../notifications/service');
 
@@ -111,6 +113,60 @@ async function notifyVolunteerTaskUpdated(volunteerUserId, requestId, actorUserI
   }
 }
 
+async function runAssignmentCycle() {
+  const availableVolunteers = await findAvailableVolunteersForMatching();
+  const sortedVolunteers = [...availableVolunteers].sort((leftVolunteer, rightVolunteer) => {
+    if (leftVolunteer.is_first_aid_capable !== rightVolunteer.is_first_aid_capable) {
+      return leftVolunteer.is_first_aid_capable ? -1 : 1;
+    }
+
+    const leftUpdatedAt = leftVolunteer.location_updated_at
+      ? new Date(leftVolunteer.location_updated_at).getTime()
+      : null;
+    const rightUpdatedAt = rightVolunteer.location_updated_at
+      ? new Date(rightVolunteer.location_updated_at).getTime()
+      : null;
+
+    if (leftUpdatedAt === null && rightUpdatedAt !== null) {
+      return 1;
+    }
+
+    if (leftUpdatedAt !== null && rightUpdatedAt === null) {
+      return -1;
+    }
+
+    if (leftUpdatedAt !== rightUpdatedAt) {
+      return (rightUpdatedAt || 0) - (leftUpdatedAt || 0);
+    }
+
+    return leftVolunteer.volunteer_id.localeCompare(rightVolunteer.volunteer_id);
+  });
+  const createdAssignments = [];
+
+  for (const volunteer of sortedVolunteers) {
+    const matchingRequest = await findMatchingRequestForVolunteer(volunteer.volunteer_id);
+
+    if (!matchingRequest) {
+      continue;
+    }
+
+    const assignment = await createAssignment(volunteer.volunteer_id, matchingRequest.request_id);
+    if (!assignment) {
+      continue;
+    }
+
+    await markRequestAssignedIfPending(matchingRequest.request_id);
+    createdAssignments.push(assignment);
+  }
+
+  return createdAssignments;
+}
+
+async function syncRequestStatusFromAssignments(requestId) {
+  await syncRequestStatusPreservingInProgress(requestId);
+  return findActiveAssignmentsByRequestId(requestId);
+}
+
 async function setAvailability(userId, { isAvailable, latitude, longitude }) {
   let volunteer = await findVolunteerByUserId(userId);
   if (!volunteer) {
@@ -141,6 +197,8 @@ async function setAvailability(userId, { isAvailable, latitude, longitude }) {
         // Refresh assignment with full data
         assignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
       }
+      await runAssignmentCycle();
+      assignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
     } else {
       assignment = existingAssignment;
     }
@@ -152,6 +210,8 @@ async function setAvailability(userId, { isAvailable, latitude, longitude }) {
       await cancelAssignment(activeAssignment.assignment_id);
       const updatedRequest = await updateRequestStatus(activeAssignment.request_id, 'PENDING');
       await notifyRequestStatusIfUserOwned(updatedRequest, userId);
+      await syncRequestStatusFromAssignments(activeAssignment.request_id);
+      await runAssignmentCycle();
     }
   }
 
@@ -198,12 +258,16 @@ async function syncAvailability(userId, { records }) {
       await notifyVolunteerTaskAssigned(volunteer.user_id, matchingRequest.request_id, userId);
       currentAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
     }
+    await runAssignmentCycle();
+    currentAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
   } else if (!updatedVolunteer.is_available && currentAssignment) {
     // If volunteer is now unavailable, cancel their active assignment
     await notifyVolunteerTaskUpdated(volunteer.user_id, currentAssignment.request_id, userId, 'sync_marked_unavailable');
     await cancelAssignment(currentAssignment.assignment_id);
     const updatedRequest = await updateRequestStatus(currentAssignment.request_id, 'PENDING');
     await notifyRequestStatusIfUserOwned(updatedRequest, userId);
+    await syncRequestStatusFromAssignments(currentAssignment.request_id);
+    await runAssignmentCycle();
     currentAssignment = null;
   }
 
@@ -244,16 +308,17 @@ async function cancelMyAssignment(userId, { assignmentId }) {
   await cancelAssignment(assignmentId);
   const updatedRequest = await updateRequestStatus(assignment.request_id, 'PENDING'); // Put it back to pending for re-assignment
   await notifyRequestStatusIfUserOwned(updatedRequest, userId);
+  await syncRequestStatusFromAssignments(assignment.request_id);
 
   // Volunteer becomes unavailable
   await updateVolunteerAvailability(volunteer.volunteer_id, false, volunteer.last_known_latitude, volunteer.last_known_longitude);
   await createAvailabilityRecord(volunteer.volunteer_id, false, false);
 
   // Auto-assign the request to someone else if possible
-  await tryToAssignRequest(assignment.request_id);
+  await runAssignmentCycle();
 
   return { 
-    message: 'Assignment cancelled, you are now unavailable, and request put back to pending for re-assignment',
+    message: 'Assignment cancelled, you are now unavailable, and matching has been refreshed',
     volunteerStatus: 'UNAVAILABLE'
   };
 }
@@ -282,6 +347,14 @@ async function cancelAssignmentByRequestId(requestId) {
         null,
       );
     }
+  const assignments = await findActiveAssignmentsByRequestId(requestId);
+
+  for (const assignment of assignments) {
+    await cancelAssignment(assignment.assignment_id);
+  }
+
+  if (assignments.length > 0) {
+    await runAssignmentCycle();
   }
 }
 
@@ -313,10 +386,22 @@ async function resolveMyAssignment(userId, { requestId }) {
     await notifyRequestStatusIfUserOwned(reassignedRequest, userId);
     assignmentResult = await getAssignmentByVolunteerId(volunteer.volunteer_id);
   }
+  await cancelAssignment(assignment.assignment_id);
+  await syncRequestStatusFromAssignments(requestId);
+
+  await updateVolunteerAvailability(
+    volunteer.volunteer_id,
+    false,
+    volunteer.last_known_latitude,
+    volunteer.last_known_longitude,
+  );
+  await createAvailabilityRecord(volunteer.volunteer_id, false, false);
+
+  await runAssignmentCycle();
 
   return { 
-    message: 'Request marked as resolved',
-    newAssignment: assignmentResult
+    message: 'Assignment resolved for this volunteer, you are now unavailable, and matching has been refreshed',
+    newAssignment: null
   };
 }
 
@@ -349,8 +434,24 @@ async function tryToAssignRequest(requestId) {
     await notifyRequestStatusIfUserOwned(updatedRequest, matchingVolunteer.user_id);
     await notifyVolunteerTaskAssigned(matchingVolunteer.user_id, requestId, matchingVolunteer.user_id);
     return true;
+  while (true) {
+    const volunteer = await findMatchingVolunteerForRequest(requestId);
+
+    if (!volunteer) {
+      break;
+    }
+
+    const assignment = await createAssignment(volunteer.volunteer_id, requestId);
+
+    if (!assignment) {
+      break;
+    }
+
+    await markRequestAssignedIfPending(requestId);
   }
-  return false;
+
+  const activeAssignments = await findActiveAssignmentsByRequestId(requestId);
+  return activeAssignments.length > 0;
 }
 
 module.exports = {
