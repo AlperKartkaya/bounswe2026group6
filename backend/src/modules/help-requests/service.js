@@ -135,6 +135,10 @@ async function applyStatusTransition(currentRequest, nextStatus, handlers) {
   }
 
   if (nextStatus === 'RESOLVED') {
+    if (currentRequest.internalStatus === 'CANCELLED') {
+      throw buildInvalidTransitionError('A cancelled request cannot be resolved.');
+    }
+
     if (currentRequest.internalStatus === 'RESOLVED') {
       return currentRequest;
     }
@@ -166,10 +170,15 @@ async function updateMyHelpRequestStatus(userId, requestId, nextStatus) {
 
   return applyStatusTransition(currentRequest, nextStatus, {
     sync: () => markHelpRequestAsSynced(userId, requestId),
-    resolve: () => markHelpRequestAsResolved(userId, requestId),
-    cancel: async () => {
+    resolve: async () => {
+      const resolvedRequest = await markHelpRequestAsResolved(userId, requestId);
       await cancelAssignmentByRequestId(requestId);
-      return markHelpRequestAsCancelled(userId, requestId);
+      return resolvedRequest;
+    },
+    cancel: async () => {
+      const cancelledRequest = await markHelpRequestAsCancelled(userId, requestId);
+      await cancelAssignmentByRequestId(requestId);
+      return cancelledRequest;
     },
   });
 }
@@ -183,10 +192,15 @@ async function updateGuestHelpRequestStatus(requestId, nextStatus, guestAccessTo
 
   return applyStatusTransition(currentRequest, nextStatus, {
     sync: () => markHelpRequestAsSyncedByRequestId(requestId),
-    resolve: () => markHelpRequestAsResolvedByRequestId(requestId),
-    cancel: async () => {
+    resolve: async () => {
+      const resolvedRequest = await markHelpRequestAsResolvedByRequestId(requestId);
       await cancelAssignmentByRequestId(requestId);
-      return markHelpRequestAsCancelledByRequestId(requestId);
+      return resolvedRequest;
+    },
+    cancel: async () => {
+      const cancelledRequest = await markHelpRequestAsCancelledByRequestId(requestId);
+      await cancelAssignmentByRequestId(requestId);
+      return cancelledRequest;
     },
   });
 }
