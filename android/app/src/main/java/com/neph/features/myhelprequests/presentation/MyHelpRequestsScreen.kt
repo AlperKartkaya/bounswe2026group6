@@ -70,8 +70,7 @@ fun MyHelpRequestsScreen(
 
     val requests by MyHelpRequestsRepository.observeHelpRequests(isAuthenticated)
         .collectAsState(initial = emptyList())
-    var actionInProgressRequestId by remember { mutableStateOf<String?>(null) }
-    var actionMessageRequestId by remember { mutableStateOf<String?>(null) }
+    var actionInProgress by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf("") }
     var initialRefreshInProgress by remember(isAuthenticated, token) { mutableStateOf(true) }
 
@@ -126,7 +125,7 @@ fun MyHelpRequestsScreen(
 
             else -> {
                 val overview = buildMyHelpRequestsOverview(requests)
-                val activeRequests = overview.activeRequests
+                val currentActiveRequest = overview.activeRequests.firstOrNull()
                 val requestHistory = overview.historyRequests
 
                 LazyColumn(
@@ -143,30 +142,18 @@ fun MyHelpRequestsScreen(
                         }
                     }
 
-                    item {
-                        SectionHeader(
-                            title = if (activeRequests.size > 1) {
-                                "Current Requests"
-                            } else {
-                                "Current Request"
-                            },
-                            subtitle = if (isAuthenticated) {
-                                if (activeRequests.size > 1) {
-                                    "Your active help requests are shown together first."
-                                } else {
+                        item {
+                            SectionHeader(
+                                title = "Current Request",
+                                subtitle = if (isAuthenticated) {
                                     "Your latest active help request is shown first."
-                                }
-                            } else {
-                                if (activeRequests.size > 1) {
-                                    "Your active guest help requests are shown together first."
                                 } else {
                                     "Your latest guest help request is shown first."
                                 }
-                            }
-                        )
-                    }
+                            )
+                        }
 
-                    if (activeRequests.isEmpty()) {
+                    if (currentActiveRequest == null) {
                         item {
                             SectionCard {
                                 Text(
@@ -177,59 +164,53 @@ fun MyHelpRequestsScreen(
                             }
                         }
                     } else {
-                        items(activeRequests, key = { it.id }) { activeRequest ->
+                        item(key = currentActiveRequest.id) {
                             MyHelpRequestCard(
-                                request = activeRequest,
-                                titleOverride = activeRequest.helpTypeSummary,
-                                subtitleOverride = activeRequest.createdAt?.let { "Opened: $it" }
+                                request = currentActiveRequest,
+                                titleOverride = currentActiveRequest.helpTypeSummary,
+                                subtitleOverride = currentActiveRequest.createdAt?.let { "Opened: $it" }
                                     ?: "Opened time unavailable",
-                                actionMessage = if (actionMessageRequestId == activeRequest.id) {
-                                    actionMessage
-                                } else {
-                                    ""
-                                },
+                                actionMessage = actionMessage,
                                 onResolve = if (isAuthenticated && token.isNotBlank()) {
                                     {
-                                        actionMessageRequestId = activeRequest.id
                                         actionMessage = ""
-                                        actionInProgressRequestId = activeRequest.id
+                                        actionInProgress = true
                                         scope.launch {
                                             try {
                                                 MyHelpRequestsRepository.markRequestAsResolved(
                                                     token = token,
-                                                    requestId = activeRequest.id
+                                                    requestId = currentActiveRequest.id
                                                 )
                                                 actionMessage = "Request marked resolved locally and queued for sync."
                                             } catch (_: Exception) {
                                                 actionMessage = "Could not save the status change locally."
                                             } finally {
-                                                actionInProgressRequestId = null
+                                                actionInProgress = false
                                             }
                                         }
                                     }
-                                } else if (!isAuthenticated && activeRequest.guestAccessToken != null) {
+                                } else if (!isAuthenticated && currentActiveRequest.guestAccessToken != null) {
                                     {
-                                        actionMessageRequestId = activeRequest.id
                                         actionMessage = ""
-                                        actionInProgressRequestId = activeRequest.id
+                                        actionInProgress = true
                                         scope.launch {
                                             try {
                                                 MyHelpRequestsRepository.markGuestRequestAsResolved(
-                                                    requestId = activeRequest.id,
-                                                    guestAccessToken = activeRequest.guestAccessToken
+                                                    requestId = currentActiveRequest.id,
+                                                    guestAccessToken = currentActiveRequest.guestAccessToken
                                                 )
                                                 actionMessage = "Request marked resolved locally and queued for sync."
                                             } catch (_: Exception) {
                                                 actionMessage = "Could not save the status change locally."
                                             } finally {
-                                                actionInProgressRequestId = null
+                                                actionInProgress = false
                                             }
                                         }
                                     }
                                 } else {
                                     null
                                 },
-                                resolveLoading = actionInProgressRequestId == activeRequest.id
+                                resolveLoading = actionInProgress
                             )
                         }
                     }
@@ -284,8 +265,8 @@ private fun RequestsOverviewCard(
                     modifier = Modifier.weight(1f)
                 )
                 OverviewMetric(
-                    label = "Open Now",
-                    value = overview.activeCount.toString(),
+                    label = "Current",
+                    value = if (overview.activeCount > 0) "Yes" else "No",
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -307,8 +288,8 @@ private fun RequestsOverviewCard(
             }
 
             val responderSummary = when {
-                overview.assignedResponderCount > 0 -> {
-                    "Responders currently assigned across open requests: ${overview.assignedResponderCount}."
+                overview.activeCount > 0 && overview.assignedResponderCount > 0 -> {
+                    "Your current request includes assigned responder details below."
                 }
 
                 overview.historyCount > 0 -> {
