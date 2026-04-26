@@ -154,7 +154,8 @@ fun MyHelpRequestsScreen(
                             MyHelpRequestCard(
                                 request = activeRequest,
                                 titleOverride = activeRequest.helpTypeSummary,
-                                subtitleOverride = activeRequest.createdAt ?: "Created time unavailable",
+                                subtitleOverride = activeRequest.createdAt?.let { "Opened: $it" }
+                                    ?: "Opened time unavailable",
                                 actionMessage = actionMessage,
                                 onResolve = if (isAuthenticated && token.isNotBlank()) {
                                     {
@@ -320,7 +321,8 @@ private fun MyHelpRequestCard(
         Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
             SectionHeader(
                 title = titleOverride ?: request.helpTypeSummary,
-                subtitle = subtitleOverride ?: (request.createdAt ?: "Created time unavailable")
+                subtitle = subtitleOverride ?: (request.createdAt?.let { "Opened: $it" }
+                    ?: "Opened time unavailable")
             )
 
             Text(
@@ -340,6 +342,38 @@ private fun MyHelpRequestCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+
+            request.urgencyLabel?.let {
+                Text(
+                    text = "Urgency: $it",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            request.priorityLabel?.let {
+                Text(
+                    text = "Priority: $it",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            request.openDurationLabel?.let {
+                Text(
+                    text = if (request.isActive) "Open for: $it" else "Was open for: $it",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            request.closedAtLabel?.let {
+                Text(
+                    text = "${request.closedStateLabel ?: "Closed"}: $it",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             if (request.isPendingSync) {
                 HelperText(text = "Saved locally. NEPH will sync this change when the network is available.")

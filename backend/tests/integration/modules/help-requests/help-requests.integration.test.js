@@ -183,6 +183,12 @@ describe('help-requests integration', () => {
 		expect(response.body.request.helpTypes).toEqual(['first_aid', 'fire_brigade']);
 		expect(response.body.request.contact.fullName).toBe('Ayse Yilmaz');
 		expect(response.body.request.status).toBe('SYNCED');
+		expect(response.body.request.urgencyLevel).toBe('HIGH');
+		expect(response.body.request.priorityLevel).toBe('HIGH');
+		expect(response.body.request.openedAt).toBeTruthy();
+		expect(response.body.request.closedAt).toBeNull();
+		expect(response.body.request.closedState).toBeNull();
+		expect(response.body.request.openDurationMinutes).toEqual(expect.any(Number));
 	});
 
 	test('guest-created request is visible in helper assignment endpoints', async () => {
@@ -570,6 +576,9 @@ describe('help-requests integration', () => {
 		expect(patchResponse.status).toBe(200);
 		expect(patchResponse.body.request.status).toBe('RESOLVED');
 		expect(patchResponse.body.request.resolvedAt).toBeTruthy();
+		expect(patchResponse.body.request.closedAt).toBe(patchResponse.body.request.resolvedAt);
+		expect(patchResponse.body.request.closedState).toBe('RESOLVED');
+		expect(patchResponse.body.request.openDurationMinutes).toEqual(expect.any(Number));
 
 		const getResponse = await request(app)
 			.get(`/api/help-requests/${requestId}`)
@@ -577,6 +586,9 @@ describe('help-requests integration', () => {
 
 		expect(getResponse.status).toBe(200);
 		expect(getResponse.body.request.status).toBe('RESOLVED');
+		expect(getResponse.body.request.urgencyLevel).toBe('HIGH');
+		expect(getResponse.body.request.priorityLevel).toBe('HIGH');
+		expect(getResponse.body.request.closedAt).toBeTruthy();
 	});
 
 	test('PATCH /:id/status guest resolve clears active assignments and frees volunteers for future matches', async () => {
