@@ -4,8 +4,11 @@ import com.neph.core.sync.LocalOwnerType
 import com.neph.core.sync.SyncStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 
 class RequestHelpOfflineMappingTest {
     @Test
@@ -37,6 +40,44 @@ class RequestHelpOfflineMappingTest {
         assertEquals("Kadikoy", json.getJSONObject("location").getString("district"))
         assertEquals(5551234567L, json.getJSONObject("contact").getLong("phone"))
         assertTrue(json.getBoolean("consentGiven"))
+    }
+
+    @Test
+    fun remoteMappingPreservesLifecycleAndOperationalMetadata() {
+        val entity = JSONObject().apply {
+            put("id", "req_remote_1")
+            put("helpTypes", JSONArray(listOf("food_water")))
+            put("otherHelpText", "")
+            put("affectedPeopleCount", 4)
+            put("riskFlags", JSONArray(listOf("fire")))
+            put("vulnerableGroups", JSONArray(listOf("elderly")))
+            put("description", "Need support")
+            put("bloodType", "A+")
+            put("status", "RESOLVED")
+            put("urgencyLevel", "MEDIUM")
+            put("priorityLevel", "MEDIUM")
+            put("createdAt", "2026-04-26T10:00:00.000Z")
+            put("resolvedAt", "2026-04-26T11:30:00.000Z")
+            put(
+                "location",
+                JSONObject().put("country", "Turkey").put("city", "Istanbul").put("district", "Kadikoy")
+            )
+            put(
+                "contact",
+                JSONObject().put("fullName", "Ayse Yilmaz").put("phone", "5551234567")
+            )
+        }.toHelpRequestEntity(
+            ownerType = LocalOwnerType.AUTHENTICATED,
+            existing = null,
+            guestAccessToken = null,
+            now = 1234L
+        )
+
+        assertEquals("MEDIUM", entity.urgencyLevel)
+        assertEquals("MEDIUM", entity.priorityLevel)
+        assertEquals("2026-04-26T11:30:00.000Z", entity.resolvedAt)
+        assertNull(entity.cancelledAt)
+        assertEquals("2026-04-26T10:00:00.000Z", entity.serverCreatedAt)
     }
 
     private fun sampleSubmission(): RequestHelpSubmission {

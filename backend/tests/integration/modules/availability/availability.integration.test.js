@@ -873,6 +873,9 @@ describe('Availability integration', () => {
     expect(response.status).toBe(200);
     expect(response.body.assignment).toBeTruthy();
     expect(response.body.assignment.request_id).toBe('req_2');
+    expect(response.body.assignment.urgency_level).toBe('LOW');
+    expect(response.body.assignment.priority_level).toBe('LOW');
+    expect(response.body.assignment.opened_at).toBeTruthy();
   });
 
   test('POST /api/availability/assignments/:id/cancel cancels assignment', async () => {

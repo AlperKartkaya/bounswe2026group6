@@ -1,5 +1,6 @@
 const { query } = require('../../db/pool');
 const { randomUUID } = require('crypto');
+const { deriveOperationalLevels } = require('../help-requests/operational');
 
 const DEFAULT_MAX_MATCH_DISTANCE_METERS = 1000;
 const FIRST_AID_HELP_TYPES = new Set(['first_aid', 'medical']);
@@ -655,6 +656,7 @@ async function getAssignmentByVolunteerId(volunteerId) {
     SELECT a.*, hr.need_type, hr.description, hr.status as request_status,
            hr.help_types, hr.other_help_text, hr.affected_people_count,
            hr.risk_flags, hr.vulnerable_groups, hr.blood_type,
+           hr.urgency_level, hr.priority_level, hr.created_at AS opened_at,
            hr.contact_full_name, hr.contact_phone, hr.contact_alternative_phone,
            rl.latitude, rl.longitude,
            rl.country AS request_country, rl.city AS request_city,
@@ -671,7 +673,22 @@ async function getAssignmentByVolunteerId(volunteerId) {
     LIMIT 1;
   `;
   const result = await query(sql, [volunteerId]);
-  return result.rows[0] || null;
+  const assignment = result.rows[0] || null;
+
+  if (!assignment) {
+    return null;
+  }
+
+  const derivedLevels = deriveOperationalLevels({
+    affectedPeopleCount: assignment.affected_people_count,
+    riskFlags: assignment.risk_flags,
+  });
+
+  return {
+    ...assignment,
+    urgency_level: assignment.urgency_level || derivedLevels.urgencyLevel,
+    priority_level: assignment.priority_level || derivedLevels.priorityLevel,
+  };
 }
 
 async function getAssignmentById(assignmentId) {

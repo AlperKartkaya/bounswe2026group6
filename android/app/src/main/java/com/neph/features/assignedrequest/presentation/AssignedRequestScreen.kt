@@ -180,6 +180,38 @@ fun AssignedRequestScreen(
                                 color = MaterialTheme.colorScheme.primary
                             )
 
+                            request.urgencyLabel?.let {
+                                Text(
+                                    text = "Urgency: $it",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            request.priorityLabel?.let {
+                                Text(
+                                    text = "Priority: $it",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            request.openedAtLabel?.let {
+                                Text(
+                                    text = "Opened: $it",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            request.openDurationLabel?.let {
+                                Text(
+                                    text = "Open for: $it",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
                             if (request.isPendingSync) {
                                 HelperText(text = "Saved locally. Assignment changes will sync when connected.")
                             }
