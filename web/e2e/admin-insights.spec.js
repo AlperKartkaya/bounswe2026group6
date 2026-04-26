@@ -29,12 +29,15 @@ async function openInsightsTab(page) {
 
 async function ensureInsightsReady(page) {
   const retryButton = page.getByRole('button', { name: 'Retry Analytics' });
+  const errorSubtitle = page.getByText('Could not load analytics data.', {
+    exact: false,
+  });
   const periodHeading = page.getByRole('heading', {
     name: /Period Comparison/i,
   });
 
-  const deadline = Date.now() + 30_000;
-  let retryClicked = false;
+  const deadline = Date.now() + 45_000;
+  let lastClickAt = 0;
 
   while (Date.now() < deadline) {
     if (/\/login(\?|$)/.test(page.url())) {
@@ -48,9 +51,15 @@ async function ensureInsightsReady(page) {
       return;
     }
 
-    if (!retryClicked && (await retryButton.isVisible().catch(() => false))) {
-      retryClicked = true;
-      await retryButton.click({ timeout: 1500, force: true }).catch(() => {});
+    // Only click retry once the error state is actually rendered, to avoid
+    // clicking the in-flight loading-state button (no-op while a request is
+    // already pending). Throttle subsequent clicks.
+    const inErrorState = await errorSubtitle.isVisible().catch(() => false);
+    if (inErrorState && Date.now() - lastClickAt > 2_000) {
+      if (await retryButton.isVisible().catch(() => false)) {
+        lastClickAt = Date.now();
+        await retryButton.click({ timeout: 1500, force: true }).catch(() => {});
+      }
     }
 
     await page.waitForTimeout(250);
