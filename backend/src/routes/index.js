@@ -13,6 +13,8 @@ const apiRouter = express.Router();
 
 apiRouter.get('/', (_request, response) => {
   response.status(200).json({
+    service: 'api',
+    status: 'ok',
     name: 'Neighborhood Emergency Preparedness Hub API',
     modules: ['auth', 'admin', 'profiles', 'help-requests', 'availability', 'location', 'gathering-areas', 'notifications'],
   });
