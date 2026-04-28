@@ -10,10 +10,19 @@ import { Checkbox } from "@/components/ui/selection/Checkbox";
 import { ProfileInfoRow } from "../../ui/display/ProfileInfoRow";
 import { SaveActionBar } from "../../ui/display/SaveActionBar";
 import { HelperText } from "@/components/ui/display/HelperText";
+import { LocationPicker, LocationPickerValue } from "@/components/feature/location";
 import { bloodTypeOptions } from "@/lib/bloodTypes";
 import { countryCodeOptions } from "@/lib/countryCodes";
 import { expertiseOptions, professionOptions } from "@/lib/profileOptions";
 import { getAccessToken, SIGNUP_DRAFT_KEY } from "@/lib/auth";
+import { fetchLocationTree } from "@/lib/location";
+import {
+    findCityKeyByLabel,
+    findCountryKeyByLabel,
+    findDistrictKeyByLabel,
+    findNeighborhoodValueByLabel,
+    LocationTreeByCountry,
+} from "@/lib/locationTree";
 import {
     buildAddress,
     parseListField,
@@ -48,64 +57,6 @@ type ProfileForm = {
     shareLocation: boolean;
 };
 
-type Neighborhood = {
-    label: string;
-    value: string;
-};
-
-type District = {
-    label: string;
-    neighborhoods: Neighborhood[];
-};
-
-type City = {
-    label: string;
-    districts: Record<string, District>;
-};
-
-type Country = {
-    label: string;
-    cities: Record<string, City>;
-};
-
-type LocationData = Record<string, Country>;
-
-const locationData: LocationData = {
-    tr: {
-        label: "Turkey",
-        cities: {
-            istanbul: {
-                label: "Istanbul",
-                districts: {
-                    kadikoy: {
-                        label: "Kadıköy",
-                        neighborhoods: [
-                            { label: "Bostancı", value: "bostanci" },
-                            { label: "Erenköy", value: "erenkoy" },
-                        ],
-                    },
-                    besiktas: {
-                        label: "Beşiktaş",
-                        neighborhoods: [
-                            { label: "Balmumcu", value: "balmumcu" },
-                            { label: "Kuruçeşme", value: "kurucesme" },
-                        ],
-                    },
-                },
-            },
-            ankara: {
-                label: "Ankara",
-                districts: {
-                    cankaya: {
-                        label: "Çankaya",
-                        neighborhoods: [{ label: "Anıttepe", value: "anittepe" }],
-                    },
-                },
-            },
-        },
-    },
-};
-
 const initialForm: ProfileForm = {
     fullName: "",
     countryCode: "+90",
@@ -126,11 +77,34 @@ const initialForm: ProfileForm = {
     shareLocation: false,
 };
 
+const FRESH_DEVICE_CAPTURE_MAX_AGE_MS = 5 * 60 * 1000;
+
+function isFreshCurrentDeviceSelection(value: LocationPickerValue | null) {
+    if (!value || value.source !== "current_device") {
+        return false;
+    }
+
+    if (!value.capturedAt) {
+        return false;
+    }
+
+    const capturedAtMs = Date.parse(value.capturedAt);
+    if (Number.isNaN(capturedAtMs)) {
+        return false;
+    }
+
+    return Date.now() - capturedAtMs <= FRESH_DEVICE_CAPTURE_MAX_AGE_MS;
+}
+
 export default function CompleteProfileForm() {
     const router = useRouter();
     const [form, setForm] = React.useState<ProfileForm>(initialForm);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState("");
+    const [locationTree, setLocationTree] = React.useState<LocationTreeByCountry>({});
+    const [locationTreeError, setLocationTreeError] = React.useState("");
+    const [locationPickerValue, setLocationPickerValue] =
+        React.useState<LocationPickerValue | null>(null);
 
     React.useEffect(() => {
         const savedDraft = sessionStorage.getItem(SIGNUP_DRAFT_KEY);
@@ -153,9 +127,81 @@ export default function CompleteProfileForm() {
         }
     }, []);
 
-    const countryData = locationData[form.country] ?? undefined;
+    React.useEffect(() => {
+        let mounted = true;
 
-    const countryOptions = Object.entries(locationData).map(([key, value]) => ({
+        async function loadLocationTree() {
+            try {
+                const response = await fetchLocationTree("TR");
+
+                if (!mounted) {
+                    return;
+                }
+
+                setLocationTree({ [response.countryCode.toLowerCase()]: response.tree });
+                setLocationTreeError("");
+            } catch (err) {
+                if (!mounted) {
+                    return;
+                }
+
+                setLocationTreeError(
+                    err instanceof Error
+                        ? err.message
+                        : "Could not load location options."
+                );
+            }
+        }
+
+        void loadLocationTree();
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    React.useEffect(() => {
+        if (!locationPickerValue) {
+            return;
+        }
+
+        const countryKey = findCountryKeyByLabel(
+            locationTree,
+            locationPickerValue.administrative.country || ""
+        );
+        const cityKey = findCityKeyByLabel(
+            locationTree,
+            countryKey,
+            locationPickerValue.administrative.city || ""
+        );
+        const districtKey = findDistrictKeyByLabel(
+            locationTree,
+            countryKey,
+            cityKey,
+            locationPickerValue.administrative.district || ""
+        );
+        const neighborhoods =
+            locationTree[countryKey]?.cities[cityKey]?.districts[districtKey]?.neighborhoods ||
+            [];
+        const neighborhoodValue = findNeighborhoodValueByLabel(
+            neighborhoods,
+            locationPickerValue.administrative.neighborhood || ""
+        );
+
+        setForm((currentForm) => ({
+            ...currentForm,
+            country: countryKey || currentForm.country,
+            city: cityKey || currentForm.city,
+            district: districtKey || currentForm.district,
+            neighborhood: neighborhoodValue || currentForm.neighborhood,
+            extraAddress:
+                locationPickerValue.administrative.extraAddress || currentForm.extraAddress,
+        }));
+    }, [locationPickerValue, locationTree]);
+
+    const countryData = form.country ? locationTree[form.country] : undefined;
+
+    const countryOptions = Object.entries(locationTree).map(([key, value]) => ({
         label: value.label,
         value: key,
     }));
@@ -229,8 +275,52 @@ export default function CompleteProfileForm() {
             return;
         }
 
-        if (!form.height || !form.weight || !form.country || !form.city) {
+        const resolvedCountryLabel =
+            countryData?.label ||
+            locationPickerValue?.administrative.country ||
+            form.country ||
+            "";
+        const resolvedCityLabel =
+            countryData?.cities[form.city]?.label ||
+            locationPickerValue?.administrative.city ||
+            form.city ||
+            "";
+        const resolvedDistrictLabel =
+            countryData?.cities[form.city]?.districts[form.district]?.label ||
+            locationPickerValue?.administrative.district ||
+            form.district;
+        const resolvedNeighborhoodLabel =
+            countryData?.cities[form.city]?.districts[form.district]?.neighborhoods.find(
+                (item) => item.value === form.neighborhood
+            )?.label ||
+            locationPickerValue?.administrative.neighborhood ||
+            form.neighborhood;
+        const resolvedExtraAddress =
+            form.extraAddress ||
+            locationPickerValue?.administrative.extraAddress ||
+            "";
+        const hasCoordinateSelection =
+            typeof locationPickerValue?.latitude === "number" &&
+            typeof locationPickerValue?.longitude === "number";
+        const resolvedCountryCode =
+            (locationPickerValue?.administrative.countryCode || "").trim().toUpperCase() ||
+            (form.country || "").trim().toUpperCase() ||
+            null;
+
+        if (!form.height || !form.weight) {
             setError("Please fill in all required fields.");
+            return;
+        }
+
+        if (!resolvedCountryLabel || !resolvedCityLabel) {
+            setError("Please select your location from map or dropdown.");
+            return;
+        }
+
+        if (form.shareLocation && !isFreshCurrentDeviceSelection(locationPickerValue)) {
+            setError(
+                "To enable Share Current Location, click Use Current Location first so we can save a fresh device location."
+            );
             return;
         }
 
@@ -263,14 +353,42 @@ export default function CompleteProfileForm() {
             });
 
             await patchMyLocation(token, {
-                country: countryData?.label || form.country,
-                city: countryData?.cities[form.city]?.label || form.city,
+                country: resolvedCountryLabel || null,
+                city: resolvedCityLabel || null,
                 address:
                     buildAddress({
-                        district: form.district,
-                        neighborhood: form.neighborhood,
-                        extraAddress: form.extraAddress,
+                        district: resolvedDistrictLabel,
+                        neighborhood: resolvedNeighborhoodLabel,
+                        extraAddress: resolvedExtraAddress,
                     }) || null,
+                latitude: hasCoordinateSelection
+                    ? locationPickerValue.latitude
+                    : undefined,
+                longitude: hasCoordinateSelection
+                    ? locationPickerValue.longitude
+                    : undefined,
+                displayAddress: locationPickerValue?.displayName ?? undefined,
+                placeId: locationPickerValue?.placeId ?? undefined,
+                administrative: {
+                    countryCode: resolvedCountryCode,
+                    country: resolvedCountryLabel || null,
+                    city: resolvedCityLabel || null,
+                    district: resolvedDistrictLabel || null,
+                    neighborhood: resolvedNeighborhoodLabel || null,
+                    extraAddress: resolvedExtraAddress || null,
+                    postalCode: locationPickerValue?.administrative.postalCode ?? null,
+                },
+                coordinate: hasCoordinateSelection
+                    ? {
+                        latitude: locationPickerValue.latitude,
+                        longitude: locationPickerValue.longitude,
+                        accuracyMeters: locationPickerValue.accuracyMeters ?? null,
+                        source: locationPickerValue.source ?? "profile_form",
+                        capturedAt:
+                            locationPickerValue.capturedAt ??
+                            new Date().toISOString(),
+                    }
+                    : undefined,
             });
 
             await patchMyPrivacy(token, {
@@ -459,6 +577,12 @@ export default function CompleteProfileForm() {
             </ProfileInfoRow>
 
             <ProfileInfoRow label="Address">
+                <LocationPicker
+                    value={locationPickerValue}
+                    onChange={setLocationPickerValue}
+                    label="Select location from map or search"
+                />
+
                 <SelectInput
                     id="country"
                     options={[{ label: "Select Country", value: "" }, ...countryOptions]}
@@ -528,15 +652,19 @@ export default function CompleteProfileForm() {
                     }
                 />
                 <HelperText>
-                    District and neighborhood are flattened into the backend address field
-                    until dedicated backend fields exist.
+                    District and neighborhood are sent with their labels and merged into
+                    the backend address field for compatibility.
                 </HelperText>
+                {locationTreeError ? (
+                    <HelperText className="text-red-500">{locationTreeError}</HelperText>
+                ) : null}
             </ProfileInfoRow>
 
             <div className="flex items-center justify-between">
                 <span className="text-sm">Share Current Location</span>
 
                 <ToggleSwitch
+                    aria-label="Share Current Location"
                     checked={form.shareLocation}
                     onCheckedChange={(value) =>
                         setForm({ ...form, shareLocation: value })

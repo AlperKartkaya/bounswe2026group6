@@ -7,6 +7,7 @@ function readUserId(request) {
 }
 
 const visibilityValues = new Set(['PUBLIC', 'EMERGENCY_ONLY', 'PRIVATE']);
+const isoAlpha2Pattern = /^[A-Za-z]{2}$/;
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -117,10 +118,97 @@ function validateLocationPatch(body) {
     return { ok: false, code: 'VALIDATION_ERROR', message: 'Payload must be an object' };
   }
 
-  const data = pickAllowed(body, ['address', 'city', 'country', 'latitude', 'longitude']);
+  const data = pickAllowed(body, [
+    'address',
+    'city',
+    'country',
+    'latitude',
+    'longitude',
+    'displayAddress',
+    'placeId',
+    'administrative',
+    'coordinate',
+  ]);
 
   if (Object.keys(data).length === 0) {
     return { ok: false, code: 'VALIDATION_ERROR', message: 'At least one location field must be provided' };
+  }
+
+  if (data.administrative !== undefined && !isPlainObject(data.administrative)) {
+    return { ok: false, code: 'VALIDATION_ERROR', message: 'administrative must be an object' };
+  }
+
+  if (data.coordinate !== undefined && !isPlainObject(data.coordinate)) {
+    return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate must be an object' };
+  }
+
+  if (isPlainObject(data.coordinate)) {
+    const coordinateHasLatitude = Object.prototype.hasOwnProperty.call(data.coordinate, 'latitude');
+    const coordinateHasLongitude = Object.prototype.hasOwnProperty.call(data.coordinate, 'longitude');
+
+    if (coordinateHasLatitude !== coordinateHasLongitude) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate.latitude and coordinate.longitude must be provided together' };
+    }
+
+    if (
+      coordinateHasLatitude
+      && data.coordinate.latitude !== null
+      && (typeof data.coordinate.latitude !== 'number' || data.coordinate.latitude < -90 || data.coordinate.latitude > 90)
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate.latitude must be between -90 and 90' };
+    }
+
+    if (
+      coordinateHasLongitude
+      && data.coordinate.longitude !== null
+      && (typeof data.coordinate.longitude !== 'number' || data.coordinate.longitude < -180 || data.coordinate.longitude > 180)
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate.longitude must be between -180 and 180' };
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data.coordinate, 'accuracyMeters')
+      && data.coordinate.accuracyMeters !== null
+      && (typeof data.coordinate.accuracyMeters !== 'number' || data.coordinate.accuracyMeters < 0)
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate.accuracyMeters must be a number >= 0' };
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data.coordinate, 'source')
+      && data.coordinate.source !== null
+      && typeof data.coordinate.source !== 'string'
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate.source must be a string or null' };
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data.coordinate, 'capturedAt')
+      && data.coordinate.capturedAt !== null
+      && typeof data.coordinate.capturedAt !== 'string'
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'coordinate.capturedAt must be a string or null' };
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data, 'latitude')
+      && Object.prototype.hasOwnProperty.call(data.coordinate, 'latitude')
+      && data.latitude !== null
+      && data.coordinate.latitude !== null
+      && data.latitude !== data.coordinate.latitude
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'latitude conflicts with coordinate.latitude' };
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data, 'longitude')
+      && Object.prototype.hasOwnProperty.call(data.coordinate, 'longitude')
+      && data.longitude !== null
+      && data.coordinate.longitude !== null
+      && data.longitude !== data.coordinate.longitude
+    ) {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'longitude conflicts with coordinate.longitude' };
+    }
   }
 
   const latitudeProvided = Object.prototype.hasOwnProperty.call(data, 'latitude');
@@ -138,9 +226,33 @@ function validateLocationPatch(body) {
     return { ok: false, code: 'VALIDATION_ERROR', message: 'longitude must be between -180 and 180' };
   }
 
-  for (const field of ['address', 'city', 'country']) {
+  for (const field of ['address', 'city', 'country', 'displayAddress', 'placeId']) {
     if (data[field] !== undefined && data[field] !== null && typeof data[field] !== 'string') {
       return { ok: false, code: 'VALIDATION_ERROR', message: `${field} must be a string or null` };
+    }
+  }
+
+  if (isPlainObject(data.administrative)) {
+    for (const field of ['countryCode', 'country', 'city', 'district', 'neighborhood', 'extraAddress', 'postalCode']) {
+      if (
+        Object.prototype.hasOwnProperty.call(data.administrative, field)
+        && data.administrative[field] !== null
+        && typeof data.administrative[field] !== 'string'
+      ) {
+        return { ok: false, code: 'VALIDATION_ERROR', message: `administrative.${field} must be a string or null` };
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(data.administrative, 'countryCode')
+      && data.administrative.countryCode !== null
+    ) {
+      const normalizedCountryCode = data.administrative.countryCode.trim();
+      if (!isoAlpha2Pattern.test(normalizedCountryCode)) {
+        return { ok: false, code: 'VALIDATION_ERROR', message: 'administrative.countryCode must be a 2-letter ISO code' };
+      }
+
+      data.administrative.countryCode = normalizedCountryCode.toUpperCase();
     }
   }
 

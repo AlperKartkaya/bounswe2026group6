@@ -41,6 +41,11 @@ const validUser = {
 beforeEach(async () => {
   await query(`
     TRUNCATE TABLE
+      notification_deliveries,
+      notification_devices,
+      notification_type_preferences,
+      notification_preferences,
+      notifications,
       messages,
       assignments,
       availability_records,
@@ -60,7 +65,7 @@ beforeEach(async () => {
       users
     RESTART IDENTITY CASCADE;
   `);
-});
+}, 15000);
 
 // ─── POST /api/auth/signup ────────────────────────────────────────────────────
 

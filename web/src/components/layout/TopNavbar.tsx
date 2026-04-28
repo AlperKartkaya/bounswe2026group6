@@ -5,55 +5,89 @@ import * as React from "react";
 import Link from "next/link";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { clearAccessToken, getAccessToken } from "@/lib/auth";
+import { useAuthSession } from "@/lib/authSession";
+import { fetchUnreadNotificationCount } from "@/lib/notifications";
 
 const navItemsOrdered = [
     { label: "Home", href: "/home" },
     { label: "News", href: "/news" },
+    { label: "Notifications", href: "/notifications" },
     { label: "Emergency Numbers", href: "/emergency-numbers" },
+    { label: "Gathering Areas", href: "/gathering-areas" },
+    { label: "Admin", href: "/admin", requiresAdmin: true },
     { label: "Profile", href: "/profile" },
     { label: "Privacy & Security", href: "/privacy-security" },
 ];
 
-const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers"]);
+const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers", "/gathering-areas"]);
 
 export function TopNavbar() {
     const router = useRouter();
     const pathname = usePathname();
-    const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+    const { state, refresh } = useAuthSession();
+    const [unreadCount, setUnreadCount] = React.useState(0);
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
     const menuRef = React.useRef<HTMLDivElement | null>(null);
+    const isAuthenticated = state.phase === "authenticated";
+    const isAdmin = Boolean(state.user?.isAdmin);
 
     React.useEffect(() => {
-        const syncAuthState = () => {
-            setIsAuthenticated(Boolean(getAccessToken()));
+        const syncUnreadCount = () => {
+            if (!isAuthenticated) {
+                setUnreadCount(0);
+                return;
+            }
+
+            const token = getAccessToken();
+            if (!token) {
+                setUnreadCount(0);
+                return;
+            }
+
+            void fetchUnreadNotificationCount(token)
+                .then((result) => {
+                    setUnreadCount(result.unreadCount || 0);
+                })
+                .catch(() => {
+                    setUnreadCount(0);
+                });
         };
+        syncUnreadCount();
 
         const handleStorage = (event: StorageEvent) => {
             if (event.key === null || event.key === "neph_access_token") {
-                syncAuthState();
+                void refresh();
+                syncUnreadCount();
             }
         };
 
         const handleVisibilityChange = () => {
             if (document.visibilityState === "visible") {
-                syncAuthState();
+                void refresh();
+                syncUnreadCount();
             }
         };
-
-        syncAuthState();
+        const handleFocus = () => {
+            void refresh();
+            syncUnreadCount();
+        };
+        const handleAuthChanged = () => {
+            void refresh();
+            syncUnreadCount();
+        };
 
         window.addEventListener("storage", handleStorage);
-        window.addEventListener("focus", syncAuthState);
-        window.addEventListener("neph-auth-changed", syncAuthState);
+        window.addEventListener("focus", handleFocus);
+        window.addEventListener("neph-auth-changed", handleAuthChanged);
         document.addEventListener("visibilitychange", handleVisibilityChange);
 
         return () => {
             window.removeEventListener("storage", handleStorage);
-            window.removeEventListener("focus", syncAuthState);
-            window.removeEventListener("neph-auth-changed", syncAuthState);
+            window.removeEventListener("focus", handleFocus);
+            window.removeEventListener("neph-auth-changed", handleAuthChanged);
             document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
-    }, []);
+    }, [isAuthenticated, refresh]);
 
     React.useEffect(() => {
         setIsMenuOpen(false);
@@ -75,13 +109,21 @@ export function TopNavbar() {
 
     const handleLogout = () => {
         clearAccessToken();
-        setIsAuthenticated(false);
+        void refresh({ force: true });
         router.replace("/login");
     };
 
-    const navItems = navItemsOrdered.filter((item) =>
-        isAuthenticated ? true : guestAllowedPaths.has(item.href)
-    );
+    const navItems = navItemsOrdered.filter((item) => {
+        if (!isAuthenticated) {
+            return guestAllowedPaths.has(item.href);
+        }
+
+        if (item.requiresAdmin) {
+            return isAdmin;
+        }
+
+        return true;
+    });
 
     return (
         <header className="top-navbar">
@@ -98,6 +140,21 @@ export function TopNavbar() {
                             className={`top-navbar-nav-item${pathname === item.href || pathname.startsWith(`${item.href}/`) ? " is-active" : ""}`}
                         >
                             {item.label}
+                            {item.href === "/notifications" && isAuthenticated && unreadCount > 0 ? (
+                                <span
+                                    style={{
+                                        marginLeft: 8,
+                                        background: "#b42318",
+                                        color: "white",
+                                        borderRadius: 999,
+                                        padding: "2px 8px",
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                    }}
+                                >
+                                    {unreadCount > 99 ? "99+" : unreadCount}
+                                </span>
+                            ) : null}
                         </Link>
                     ))}
                 </nav>
@@ -147,7 +204,7 @@ export function TopNavbar() {
                                         className="top-navbar-dropdown-item"
                                         onClick={() => {
                                             clearAccessToken();
-                                            setIsAuthenticated(false);
+                                            void refresh({ force: true });
                                             setIsMenuOpen(false);
                                             router.push("/login");
                                         }}

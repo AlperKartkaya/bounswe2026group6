@@ -2,6 +2,8 @@ package com.neph.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavType
 import androidx.navigation.NavHostController
 import androidx.navigation.navArgument
@@ -39,8 +41,9 @@ fun AppNavGraph(
     startDestination: String = Routes.Welcome.route
 ) {
     val verifyEmailRouteWithToken = "${Routes.VerifyEmail.route}?token={token}"
+    val accessToken by AuthSessionStore.accessTokenFlow.collectAsState()
 
-    fun isAuthenticated(): Boolean = AuthSessionStore.getAccessToken().isNullOrBlank().not()
+    fun isAuthenticated(): Boolean = accessToken.isNullOrBlank().not()
 
     fun navigateToLogin() {
         navController.navigate(Routes.Login.route) {
@@ -375,6 +378,7 @@ fun AppNavGraph(
                     navController.navigate(Routes.Signup.route)
                 },
                 onContinueAsGuest = {
+                    AuthSessionStore.setGuestMode(true)
                     navController.navigate(Routes.Home.route) {
                         popUpTo(Routes.Welcome.route) { inclusive = true }
                         launchSingleTop = true
@@ -409,6 +413,7 @@ fun AppNavGraph(
                     navController.navigate(Routes.ForgotPassword.route)
                 },
                 onContinueAsGuest = {
+                    AuthSessionStore.setGuestMode(true)
                     navController.navigate(Routes.Home.route) {
                         popUpTo(Routes.Welcome.route) { inclusive = true }
                         launchSingleTop = true
@@ -436,13 +441,16 @@ fun AppNavGraph(
             )
         }
 
+        composable(Routes.VerifyEmail.route) {
+            OpenVerifyEmailScreen(navController = navController, initialToken = null)
+        }
+
         composable(
             route = verifyEmailRouteWithToken,
             arguments = listOf(
                 navArgument("token") {
                     type = NavType.StringType
                     nullable = true
-                    defaultValue = null
                 }
             ),
             deepLinks = listOf(
@@ -451,22 +459,9 @@ fun AppNavGraph(
                 }
             )
         ) { backStackEntry ->
-            VerifyEmailScreen(
-                initialToken = backStackEntry.arguments?.getString("token"),
-                onVerificationSuccess = {
-                    navController.navigate(Routes.CompleteProfile.route) {
-                        popUpTo(Routes.Welcome.route) { inclusive = false }
-                        launchSingleTop = true
-                    }
-                },
-                onContinueToLogin = {
-                    navController.navigate(Routes.Login.route) {
-                        launchSingleTop = true
-                    }
-                },
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
+            OpenVerifyEmailScreen(
+                navController = navController,
+                initialToken = backStackEntry.arguments?.getString("token")
             )
         }
 
@@ -541,4 +536,28 @@ fun AppNavGraph(
             )
         }
     }
+}
+
+@Composable
+private fun OpenVerifyEmailScreen(
+    navController: NavHostController,
+    initialToken: String?
+) {
+    VerifyEmailScreen(
+        initialToken = initialToken,
+        onVerificationSuccess = {
+            navController.navigate(Routes.CompleteProfile.route) {
+                popUpTo(Routes.Welcome.route) { inclusive = false }
+                launchSingleTop = true
+            }
+        },
+        onContinueToLogin = {
+            navController.navigate(Routes.Login.route) {
+                launchSingleTop = true
+            }
+        },
+        onNavigateBack = {
+            navController.popBackStack()
+        }
+    )
 }
