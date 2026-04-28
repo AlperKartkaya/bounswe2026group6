@@ -920,11 +920,6 @@ textarea::placeholder {
     margin: 8px 0 0;
 }
 
-.donate-action-wrap {
-    margin-top: 20px;
-    max-width: 20rem;
-}
-
 @keyframes page-enter {
     from {
         opacity: 0;

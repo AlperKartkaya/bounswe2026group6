@@ -23,6 +23,11 @@ const nextConfig: NextConfig = {
                 destination: "/home",
                 permanent: true,
             },
+            {
+                source: "/donate",
+                destination: "/home",
+                permanent: true,
+            },
         ];
     },
     async rewrites() {

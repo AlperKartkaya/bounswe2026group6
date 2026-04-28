@@ -4,7 +4,6 @@ import { PageContainer } from "@/components/layout/PageContainer";
 const quickLinks = [
     { label: "News", href: "/news" },
     { label: "Emergency Numbers", href: "/emergency-numbers" },
-    { label: "Donate", href: "/donate" },
 ];
 
 const policyLinks = [
