@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 
 const { pool, query } = require('../../db/pool');
+const { deriveOperationalLevels } = require('./operational');
 
 function mapStatus(row) {
   if (row.status === 'RESOLVED') {
@@ -60,21 +61,72 @@ function mapContact(row) {
   };
 }
 
-function mapHelper(row) {
-  if (!row.helper_first_name && !row.helper_last_name && !row.helper_phone_number) {
+function parseHelpers(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function normalizeHelperText(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function mapHelperValue(value) {
+  if (!value || typeof value !== 'object') {
     return null;
   }
 
   return {
-    firstName: row.helper_first_name || null,
-    lastName: row.helper_last_name || null,
-    phone: row.helper_phone_number ? Number(row.helper_phone_number) : null,
-    profession: row.helper_profession || null,
-    expertise: row.helper_expertise_area || null,
+    firstName: normalizeHelperText(value.firstName),
+    lastName: normalizeHelperText(value.lastName),
+    phone: value.phone ? Number(value.phone) : null,
+    profession: normalizeHelperText(value.profession),
+    expertise: normalizeHelperText(value.expertise),
   };
 }
 
+function hasVisibleHelperField(helper) {
+  return Boolean(
+    helper
+    && (
+      helper.firstName
+      || helper.lastName
+      || helper.phone != null
+      || helper.profession
+      || helper.expertise
+    )
+  );
+}
+
 function mapHelpRequest(row) {
+  const helpers = parseHelpers(row.helpers)
+    .map(mapHelperValue)
+    .filter(Boolean);
+  const helper = helpers.find(hasVisibleHelperField) || null;
+  const derivedOperational = deriveOperationalLevels({
+    affectedPeopleCount: row.affected_people_count,
+    riskFlags: row.risk_flags,
+  });
+  const urgencyLevel = row.urgency_level || derivedOperational.urgencyLevel;
+  const priorityLevel = row.priority_level || derivedOperational.priorityLevel;
+  const closedAt = row.closed_at || row.cancelled_at || row.resolved_at || null;
+
   return {
     id: row.request_id,
     userId: row.user_id,
@@ -91,10 +143,23 @@ function mapHelpRequest(row) {
     needType: row.need_type,
     status: mapStatus(row),
     internalStatus: row.status,
+    urgencyLevel,
+    priorityLevel,
+    openedAt: row.created_at,
+    closedAt,
+    openDurationMinutes: row.open_duration_minutes,
+    closedState:
+      row.status === 'RESOLVED'
+        ? 'RESOLVED'
+        : row.status === 'CANCELLED'
+          ? 'CANCELLED'
+          : null,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
+    cancelledAt: row.cancelled_at,
     isSavedLocally: row.is_saved_locally,
-    helper: mapHelper(row),
+    helper,
+    helpers,
   };
 }
 
@@ -116,8 +181,17 @@ function buildSelectQuery() {
       hr.contact_alternative_phone,
       hr.consent_given,
       hr.status,
+      hr.urgency_level,
+      hr.priority_level,
       hr.created_at,
       hr.resolved_at,
+      hr.cancelled_at,
+      COALESCE(hr.cancelled_at, hr.resolved_at) AS closed_at,
+      FLOOR(
+        EXTRACT(
+          EPOCH FROM (COALESCE(hr.cancelled_at, hr.resolved_at, CURRENT_TIMESTAMP) - hr.created_at)
+        ) / 60
+      )::int AS open_duration_minutes,
       hr.is_saved_locally,
       rl.location_id,
       rl.country,
@@ -130,26 +204,39 @@ function buildSelectQuery() {
       rl.is_gps_location,
       rl.is_last_known,
       rl.captured_at,
-      helper_profile.first_name AS helper_first_name,
-      helper_profile.last_name AS helper_last_name,
-      helper_profile.phone_number AS helper_phone_number,
-      helper_expertise.profession AS helper_profession,
-      helper_expertise.expertise_area AS helper_expertise_area
+      helper_assignments.helpers AS helpers
     FROM help_requests hr
     LEFT JOIN request_locations rl ON rl.request_id = hr.request_id
-    LEFT JOIN assignments asg
-      ON asg.request_id = hr.request_id
-      AND asg.is_cancelled = FALSE
-    LEFT JOIN volunteers vol ON vol.volunteer_id = asg.volunteer_id
-    LEFT JOIN users helper_user ON helper_user.user_id = vol.user_id
-    LEFT JOIN user_profiles helper_profile ON helper_profile.user_id = vol.user_id
     LEFT JOIN LATERAL (
-      SELECT e.profession, e.expertise_area
-      FROM expertise e
-      WHERE e.profile_id = helper_profile.profile_id
-      ORDER BY e.is_verified DESC, e.expertise_id ASC
-      LIMIT 1
-    ) helper_expertise ON TRUE
+      SELECT COALESCE(
+        json_agg(
+          json_build_object(
+            'firstName', helper_profile.first_name,
+            'lastName', helper_profile.last_name,
+            'phone', helper_profile.phone_number,
+            'profession', helper_expertise.profession,
+            'expertise', helper_expertise.expertise_area
+          )
+          ORDER BY assignment_rows.assigned_at ASC, assignment_rows.assignment_id ASC
+        ) FILTER (WHERE assignment_rows.assignment_id IS NOT NULL),
+        '[]'::json
+      ) AS helpers
+      FROM (
+        SELECT a.assignment_id, a.assigned_at, vol.user_id
+        FROM assignments a
+        JOIN volunteers vol ON vol.volunteer_id = a.volunteer_id
+        WHERE a.request_id = hr.request_id
+          AND a.is_cancelled = FALSE
+      ) assignment_rows
+      LEFT JOIN user_profiles helper_profile ON helper_profile.user_id = assignment_rows.user_id
+      LEFT JOIN LATERAL (
+        SELECT e.profession, e.expertise_area
+        FROM expertise e
+        WHERE e.profile_id = helper_profile.profile_id
+        ORDER BY e.is_verified DESC, e.expertise_id ASC
+        LIMIT 1
+      ) helper_expertise ON TRUE
+    ) helper_assignments ON TRUE
   `;
 }
 
@@ -160,6 +247,10 @@ async function createHelpRequest(input) {
     await client.query('BEGIN');
 
     const requestId = crypto.randomUUID();
+    const operationalLevels = deriveOperationalLevels({
+      affectedPeopleCount: input.affectedPeopleCount,
+      riskFlags: input.riskFlags,
+    });
 
     const requestResult = await client.query(
       `
@@ -178,9 +269,11 @@ async function createHelpRequest(input) {
           contact_phone,
           contact_alternative_phone,
           consent_given,
+          urgency_level,
+          priority_level,
           is_saved_locally
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING
           request_id,
           user_id,
@@ -197,8 +290,17 @@ async function createHelpRequest(input) {
           contact_alternative_phone,
           consent_given,
           status,
+          urgency_level,
+          priority_level,
           created_at,
           resolved_at,
+          cancelled_at,
+          COALESCE(cancelled_at, resolved_at) AS closed_at,
+          FLOOR(
+            EXTRACT(
+              EPOCH FROM (COALESCE(cancelled_at, resolved_at, CURRENT_TIMESTAMP) - created_at)
+            ) / 60
+          )::int AS open_duration_minutes,
           is_saved_locally
       `,
       [
@@ -216,6 +318,8 @@ async function createHelpRequest(input) {
         input.contact.phone,
         input.contact.alternativePhone ?? null,
         input.consentGiven,
+        operationalLevels.urgencyLevel,
+        operationalLevels.priorityLevel,
         input.isSavedLocally,
       ],
     );
@@ -370,6 +474,7 @@ async function markHelpRequestAsResolved(userId, requestId) {
       UPDATE help_requests
       SET status = 'RESOLVED',
           resolved_at = CURRENT_TIMESTAMP,
+          cancelled_at = NULL,
           is_saved_locally = FALSE
       WHERE user_id = $1 AND request_id = $2
     `,
@@ -385,6 +490,7 @@ async function markHelpRequestAsResolvedByRequestId(requestId) {
       UPDATE help_requests
       SET status = 'RESOLVED',
           resolved_at = CURRENT_TIMESTAMP,
+          cancelled_at = NULL,
           is_saved_locally = FALSE
       WHERE request_id = $1
     `,
@@ -399,6 +505,7 @@ async function markHelpRequestAsCancelled(userId, requestId) {
     `
       UPDATE help_requests
       SET status = 'CANCELLED',
+          cancelled_at = CURRENT_TIMESTAMP,
           is_saved_locally = FALSE
       WHERE user_id = $1 AND request_id = $2
     `,
@@ -413,6 +520,7 @@ async function markHelpRequestAsCancelledByRequestId(requestId) {
     `
       UPDATE help_requests
       SET status = 'CANCELLED',
+          cancelled_at = CURRENT_TIMESTAMP,
           is_saved_locally = FALSE
       WHERE request_id = $1
     `,

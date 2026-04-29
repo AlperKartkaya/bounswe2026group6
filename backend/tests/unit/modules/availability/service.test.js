@@ -9,8 +9,12 @@ const {
   cancelAssignmentByRequestId,
 } = require('../../../../src/modules/availability/service');
 const repository = require('../../../../src/modules/availability/repository');
+const { createNotification } = require('../../../../src/modules/notifications/service');
 
 jest.mock('../../../../src/modules/availability/repository');
+jest.mock('../../../../src/modules/notifications/service', () => ({
+  createNotification: jest.fn().mockResolvedValue({ id: 'notif_1' }),
+}));
 
 describe('Availability Service', () => {
   const userId = 'user_123';
@@ -19,6 +23,12 @@ describe('Availability Service', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    repository.findAvailableVolunteersForMatching.mockResolvedValue([]);
+    repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
+    repository.findMatchingVolunteerForRequest.mockResolvedValue(null);
+    repository.markRequestAssignedIfPending.mockResolvedValue(null);
+    repository.syncRequestStatusPreservingInProgress.mockResolvedValue(null);
+    repository.findRequestOwnerByRequestId.mockResolvedValue({ request_id: 'req_123', user_id: 'owner_123' });
   });
 
   describe('setAvailability', () => {
@@ -27,7 +37,6 @@ describe('Availability Service', () => {
       repository.createVolunteer.mockResolvedValue(volunteer);
       repository.updateVolunteerAvailability.mockResolvedValue({ ...volunteer, is_available: true });
       repository.getAssignmentByVolunteerId.mockResolvedValue(null);
-      repository.findMatchingRequestForVolunteer.mockResolvedValue(null);
 
       const result = await setAvailability(userId, { isAvailable: true, latitude: 41, longitude: 29 });
 
@@ -40,6 +49,7 @@ describe('Availability Service', () => {
     it('should try to match a request if volunteer becomes available', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
       repository.updateVolunteerAvailability.mockResolvedValue({ ...volunteer, is_available: true });
+      repository.findAvailableVolunteersForMatching.mockResolvedValue([{ ...volunteer, is_available: true }]);
       repository.getAssignmentByVolunteerId.mockResolvedValue(null);
       repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_123' });
       repository.createAssignment.mockResolvedValue(assignment);
@@ -49,19 +59,35 @@ describe('Availability Service', () => {
 
       expect(repository.findMatchingRequestForVolunteer).toHaveBeenCalledWith('vol_123');
       expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'ASSIGNED');
+      expect(repository.markRequestAssignedIfPending).toHaveBeenCalledWith('req_123');
       expect(result.assignment).toEqual(assignment);
+    });
+
+    it('should skip request status updates when guarded assignment creation returns null', async () => {
+      repository.findVolunteerByUserId.mockResolvedValue(volunteer);
+      repository.updateVolunteerAvailability.mockResolvedValue({ ...volunteer, is_available: true });
+      repository.findAvailableVolunteersForMatching.mockResolvedValue([{ ...volunteer, is_available: true }]);
+      repository.getAssignmentByVolunteerId.mockResolvedValue(null);
+      repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_123' });
+      repository.createAssignment.mockResolvedValue(null);
+
+      const result = await setAvailability(userId, { isAvailable: true });
+
+      expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_123');
+      expect(repository.markRequestAssignedIfPending).not.toHaveBeenCalled();
+      expect(result.assignment).toBeNull();
     });
 
     it('should cancel assignment if volunteer becomes unavailable', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
       repository.updateVolunteerAvailability.mockResolvedValue({ ...volunteer, is_available: false });
       repository.getAssignmentByVolunteerId.mockResolvedValue(assignment);
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
 
       const result = await setAvailability(userId, { isAvailable: false });
 
       expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'PENDING');
+      expect(repository.syncRequestStatusPreservingInProgress).toHaveBeenCalledWith('req_123');
       expect(result.volunteer.is_available).toBe(false);
     });
   });
@@ -70,7 +96,6 @@ describe('Availability Service', () => {
     it('should sync multiple records and update to latest status', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
       repository.getAssignmentByVolunteerId.mockResolvedValue(null);
-      repository.findMatchingRequestForVolunteer.mockResolvedValue(null);
       
       const records = [
         { isAvailable: true, timestamp: '2023-01-01T10:00:00Z' },
@@ -85,6 +110,7 @@ describe('Availability Service', () => {
 
     it('should try to match a request if volunteer is now available', async () => {
       repository.findVolunteerByUserId.mockResolvedValueOnce(volunteer).mockResolvedValueOnce({ ...volunteer, is_available: true });
+      repository.findAvailableVolunteersForMatching.mockResolvedValue([{ ...volunteer, is_available: true }]);
       repository.getAssignmentByVolunteerId.mockResolvedValue(null);
       repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_123' });
       
@@ -100,13 +126,14 @@ describe('Availability Service', () => {
         .mockResolvedValueOnce(volunteer)
         .mockResolvedValueOnce({ ...volunteer, is_available: false });
       repository.getAssignmentByVolunteerId.mockResolvedValue(assignment);
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
       
       const records = [{ isAvailable: false, timestamp: '2023-01-01T10:00:00Z' }];
 
       const result = await syncAvailability(userId, { records });
 
       expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'PENDING');
+      expect(repository.syncRequestStatusPreservingInProgress).toHaveBeenCalledWith('req_123');
       expect(result.assignment).toBeNull();
     });
   });
@@ -129,15 +156,15 @@ describe('Availability Service', () => {
   });
 
   describe('cancelMyAssignment', () => {
-    it('should cancel assignment, set request back to pending and set volunteer unavailable', async () => {
+    it('should cancel assignment, resync request status and set volunteer unavailable', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
       repository.getAssignmentById.mockResolvedValue(assignment);
-      repository.findMatchingRequestForVolunteer.mockResolvedValue(null);
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
 
       const result = await cancelMyAssignment(userId, { assignmentId: 'asg_123' });
 
       expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'PENDING');
+      expect(repository.syncRequestStatusPreservingInProgress).toHaveBeenCalledWith('req_123');
       expect(repository.updateVolunteerAvailability).toHaveBeenCalledWith('vol_123', false, undefined, undefined);
       expect(result.message).toContain('Assignment cancelled, you are now unavailable');
     });
@@ -145,29 +172,34 @@ describe('Availability Service', () => {
     it('should try to auto-assign the request to someone else after volunteer cancels', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
       repository.getAssignmentById.mockResolvedValue(assignment);
-      repository.findMatchingVolunteerForRequest.mockResolvedValue({ volunteer_id: 'vol_456' });
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
+      repository.findAvailableVolunteersForMatching.mockResolvedValue([{ volunteer_id: 'vol_456', user_id: 'user_456' }]);
+      repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_123' });
 
       await cancelMyAssignment(userId, { assignmentId: 'asg_123' });
 
-      expect(repository.findMatchingVolunteerForRequest).toHaveBeenCalledWith('req_123');
       expect(repository.createAssignment).toHaveBeenCalledWith('vol_456', 'req_123');
     });
   });
 
   describe('cancelAssignmentByRequestId', () => {
-    it('should cancel assignment and try to match the volunteer with a new request', async () => {
-      repository.findAssignmentByRequestId.mockResolvedValue(assignment);
+    it('should cancel all active assignments for the request', async () => {
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([
+        assignment,
+        { assignment_id: 'asg_456', volunteer_id: 'vol_456', request_id: 'req_123' },
+      ]);
+      repository.findAvailableVolunteersForMatching.mockResolvedValue([{ volunteer_id: 'vol_789', user_id: 'user_789' }]);
       repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_456' });
 
       await cancelAssignmentByRequestId('req_123');
 
       expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
-      expect(repository.findMatchingRequestForVolunteer).toHaveBeenCalledWith('vol_123');
-      expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_456');
+      expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_456');
+      expect(repository.createAssignment).toHaveBeenCalledWith('vol_789', 'req_456');
     });
 
     it('should do nothing if no assignment is found', async () => {
-      repository.findAssignmentByRequestId.mockResolvedValue(null);
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
 
       await cancelAssignmentByRequestId('req_123');
 
@@ -176,26 +208,28 @@ describe('Availability Service', () => {
   });
 
   describe('resolveMyAssignment', () => {
-    it('should mark request as resolved', async () => {
+    it('should only clear the resolver assignment and resync the request', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
       repository.getAssignmentByVolunteerId.mockResolvedValue(assignment);
-      repository.findMatchingRequestForVolunteer.mockResolvedValue(null);
 
       const result = await resolveMyAssignment(userId, { requestId: 'req_123' });
 
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'RESOLVED');
-      expect(result.message).toBe('Request marked as resolved');
+      expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
+      expect(repository.syncRequestStatusPreservingInProgress).toHaveBeenCalledWith('req_123');
+      expect(repository.updateVolunteerAvailability).toHaveBeenCalledWith('vol_123', false, undefined, undefined);
+      expect(result.message).toBe('Assignment resolved for this volunteer, you are now unavailable, and matching has been refreshed');
+      expect(result.newAssignment).toBeNull();
     });
 
-    it('should try to find a NEW assignment after resolving', async () => {
+    it('should not create a new assignment for the resolver after resolving', async () => {
       repository.findVolunteerByUserId.mockResolvedValue(volunteer);
-      repository.getAssignmentByVolunteerId.mockResolvedValueOnce(assignment).mockResolvedValueOnce({ assignment_id: 'asg_456' });
-      repository.findMatchingRequestForVolunteer.mockResolvedValue({ request_id: 'req_456' });
+      repository.getAssignmentByVolunteerId.mockResolvedValue(assignment);
 
       const result = await resolveMyAssignment(userId, { requestId: 'req_123' });
 
-      expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_456');
-      expect(result.newAssignment).toBeDefined();
+      expect(repository.cancelAssignment).toHaveBeenCalledWith('asg_123');
+      expect(repository.createAssignment).not.toHaveBeenCalledWith('vol_123', 'req_123');
+      expect(result.newAssignment).toBeNull();
     });
   });
 
@@ -223,24 +257,89 @@ describe('Availability Service', () => {
   });
 
   describe('tryToAssignRequest', () => {
-    it('should assign a volunteer if a match is found', async () => {
-      repository.findMatchingVolunteerForRequest.mockResolvedValue(volunteer);
-      repository.createAssignment.mockResolvedValue(assignment);
+    it('assigns only volunteers selected for the target request', async () => {
+      repository.findMatchingVolunteerForRequest
+        .mockResolvedValueOnce({ volunteer_id: 'vol_specialist' })
+        .mockResolvedValueOnce(null);
+      repository.createAssignment.mockResolvedValue({
+        assignment_id: 'asg_123',
+        volunteer_id: 'vol_specialist',
+        request_id: 'req_123',
+      });
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([
+        {
+          assignment_id: 'asg_123',
+          volunteer_id: 'vol_specialist',
+          request_id: 'req_123',
+        },
+      ]);
 
       const result = await tryToAssignRequest('req_123');
 
-      expect(repository.findMatchingVolunteerForRequest).toHaveBeenCalledWith('req_123');
-      expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_123');
-      expect(repository.updateRequestStatus).toHaveBeenCalledWith('req_123', 'ASSIGNED');
+      expect(repository.findMatchingVolunteerForRequest).toHaveBeenNthCalledWith(1, 'req_123');
+      expect(repository.createAssignment).toHaveBeenCalledWith('vol_specialist', 'req_123');
       expect(result).toBe(true);
     });
 
-    it('should return false if no matching volunteer is found', async () => {
-      repository.findMatchingVolunteerForRequest.mockResolvedValue(null);
+    it('keeps assigning the target request while it still has eligible volunteers', async () => {
+      repository.findMatchingVolunteerForRequest
+        .mockResolvedValueOnce({ volunteer_id: 'vol_123' })
+        .mockResolvedValueOnce({ volunteer_id: 'vol_456' })
+        .mockResolvedValueOnce(null);
+      repository.createAssignment
+        .mockResolvedValueOnce(assignment)
+        .mockResolvedValueOnce({ assignment_id: 'asg_456', volunteer_id: 'vol_456', request_id: 'req_123' });
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([
+        assignment,
+        { assignment_id: 'asg_456', volunteer_id: 'vol_456', request_id: 'req_123' },
+      ]);
 
       const result = await tryToAssignRequest('req_123');
 
-      expect(repository.findMatchingVolunteerForRequest).toHaveBeenCalledWith('req_123');
+      expect(repository.createAssignment).toHaveBeenCalledWith('vol_123', 'req_123');
+      expect(repository.createAssignment).toHaveBeenCalledWith('vol_456', 'req_123');
+      expect(repository.markRequestAssignedIfPending).toHaveBeenCalledWith('req_123');
+      expect(result).toBe(true);
+    });
+
+    it('creates notifications for both helper and request owner on assignment', async () => {
+      repository.findRequestOwnerByRequestId.mockResolvedValue({ request_id: 'req_123', user_id: 'owner_123' });
+      repository.findMatchingVolunteerForRequest
+        .mockResolvedValueOnce({ volunteer_id: 'vol_123', user_id: 'helper_123' })
+        .mockResolvedValueOnce(null);
+      repository.createAssignment.mockResolvedValueOnce(assignment);
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([assignment]);
+
+      await tryToAssignRequest('req_123');
+
+      expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({
+        recipientUserId: 'owner_123',
+        type: 'HELP_REQUEST_STATUS_CHANGED',
+        entity: { type: 'HELP_REQUEST', id: 'req_123' },
+      }));
+      expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({
+        recipientUserId: 'helper_123',
+        type: 'TASK_ASSIGNED',
+        entity: { type: 'HELP_REQUEST', id: 'req_123' },
+      }));
+    });
+
+    it('stops cleanly when guarded assignment creation returns null', async () => {
+      repository.findMatchingVolunteerForRequest.mockResolvedValue({ volunteer_id: 'vol_123' });
+      repository.createAssignment.mockResolvedValue(null);
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
+
+      const result = await tryToAssignRequest('req_123');
+
+      expect(repository.markRequestAssignedIfPending).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
+    it('should return false if the target request still has no active assignments after the cycle', async () => {
+      repository.findActiveAssignmentsByRequestId.mockResolvedValue([]);
+
+      const result = await tryToAssignRequest('req_123');
+
       expect(repository.createAssignment).not.toHaveBeenCalled();
       expect(result).toBe(false);
     });

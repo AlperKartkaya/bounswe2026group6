@@ -1,9 +1,10 @@
 package com.neph.features.profile.presentation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -15,11 +16,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import com.neph.core.network.ApiException
 import com.neph.features.auth.util.countryCodeOptions
+import com.neph.features.profile.data.CurrentLocationShareWarning
+import com.neph.features.profile.data.DeviceLocationProvider
+import com.neph.features.profile.data.LocationData
+import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.ProfileData
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.bloodTypeOptions
@@ -44,6 +49,8 @@ import com.neph.ui.components.inputs.AppTextField
 import com.neph.ui.components.selection.AppCheckbox
 import com.neph.ui.components.selection.AppToggleSwitch
 import com.neph.ui.layout.AppScaffold
+import com.neph.ui.map.LocationSelectionMapAction
+import com.neph.ui.map.SharedCoordinatesMapAction
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -59,19 +66,39 @@ fun EditProfileScreen(
     var loading by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf("") }
     var info by rememberSaveable { mutableStateOf("") }
+    var mapActionInfo by rememberSaveable { mutableStateOf("") }
 
     var countryCode by rememberSaveable { mutableStateOf(initialPhoneParts.countryCode) }
     var phone by rememberSaveable { mutableStateOf(initialPhoneParts.phone) }
     var heightText by rememberSaveable { mutableStateOf(profile.height.toEditableString()) }
     var weightText by rememberSaveable { mutableStateOf(profile.weight.toEditableString()) }
     var ageText by rememberSaveable { mutableStateOf(profile.age?.toString().orEmpty()) }
+    var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
+    var locationLoading by remember { mutableStateOf(true) }
+    var locationInfo by rememberSaveable { mutableStateOf("") }
+    var syncedSharedLatitude by remember { mutableStateOf(profile.sharedLatitude) }
+    var syncedSharedLongitude by remember { mutableStateOf(profile.sharedLongitude) }
 
     val scope = rememberCoroutineScope()
     val spacing = LocalNephSpacing.current
+    val context = LocalContext.current
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        if (grants.values.any { it }) {
+            profile = profile.copy(shareLocation = true)
+            info = "Location permission granted. Current location will be shared when you save."
+        } else {
+            profile = profile.copy(shareLocation = false)
+            info = "Location permission denied. Current location sharing remains off."
+        }
+    }
 
     LaunchedEffect(Unit) {
         try {
             profile = ProfileRepository.fetchAndCacheRemoteProfile()
+            syncedSharedLatitude = profile.sharedLatitude
+            syncedSharedLongitude = profile.sharedLongitude
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
@@ -82,6 +109,8 @@ fun EditProfileScreen(
             throw cancellationException
         } catch (_: ApiException) {
             profile = ProfileRepository.getProfile()
+            syncedSharedLatitude = profile.sharedLatitude
+            syncedSharedLongitude = profile.sharedLongitude
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
@@ -90,6 +119,8 @@ fun EditProfileScreen(
             ageText = profile.age?.toString().orEmpty()
         } catch (_: Exception) {
             profile = ProfileRepository.getProfile()
+            syncedSharedLatitude = profile.sharedLatitude
+            syncedSharedLongitude = profile.sharedLongitude
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
@@ -100,9 +131,23 @@ fun EditProfileScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        try {
+            availableLocationData = LocationTreeRepository.ensureLocationData()
+        } catch (cancellationException: CancellationException) {
+            throw cancellationException
+        } catch (_: Exception) {
+            availableLocationData = locationData
+            locationInfo = "Could not refresh location options. Showing saved location list."
+        } finally {
+            locationLoading = false
+        }
+    }
+
     fun handleSave() {
         error = ""
         info = ""
+        mapActionInfo = ""
 
         val (firstName, lastName) = splitFullName(profile.fullName.orEmpty())
         if (firstName.isBlank() || lastName.isBlank()) {
@@ -136,21 +181,51 @@ fun EditProfileScreen(
         loading = true
         scope.launch {
             try {
-                profile = ProfileRepository.syncProfile(
-                    profile.copy(
-                        phone = combinePhoneNumber(countryCode, phone),
-                        height = heightFloat,
-                        weight = weightFloat,
-                        age = ageInt
-                    )
+                val profileToSync = profile.copy(
+                    phone = combinePhoneNumber(countryCode, phone),
+                    height = heightFloat,
+                    weight = weightFloat,
+                    age = ageInt
                 )
+                val locationShareAttempt = DeviceLocationProvider.captureCurrentLocationForSharing(
+                    context = context,
+                    sharingEnabled = profileToSync.shareLocation == true
+                )
+                val profileWithSharePolicy = when (locationShareAttempt.warning) {
+                    CurrentLocationShareWarning.PERMISSION_DENIED -> profileToSync.copy(shareLocation = false)
+                    CurrentLocationShareWarning.LOCATION_UNAVAILABLE -> profileToSync
+                    null -> profileToSync
+                }
+
+                profile = ProfileRepository.syncProfile(
+                    profile = profileWithSharePolicy,
+                    currentDeviceLocation = locationShareAttempt.location,
+                    forceClearSharedCoordinates = locationShareAttempt.warning == CurrentLocationShareWarning.LOCATION_UNAVAILABLE
+                )
+                syncedSharedLatitude = profile.sharedLatitude
+                syncedSharedLongitude = profile.sharedLongitude
+
                 val phoneParts = normalizePhoneParts(profile.phone)
                 countryCode = phoneParts.countryCode
                 phone = phoneParts.phone
                 heightText = profile.height.toEditableString()
                 weightText = profile.weight.toEditableString()
                 ageText = profile.age?.toString().orEmpty()
-                info = "Profile updated successfully."
+                info = when (locationShareAttempt.warning) {
+                    CurrentLocationShareWarning.PERMISSION_DENIED ->
+                        "Profile updated successfully. Location permission is denied, so location sharing was turned off and stored coordinates were cleared."
+
+                    CurrentLocationShareWarning.LOCATION_UNAVAILABLE ->
+                        "Profile updated successfully. Current location is unavailable, so sharing remains on and stale coordinates were cleared."
+
+                    null -> {
+                        if (locationShareAttempt.location != null) {
+                            "Profile updated successfully. Current location shared."
+                        } else {
+                            "Profile updated successfully."
+                        }
+                    }
+                }
                 onSave(profile)
             } catch (cancellationException: CancellationException) {
                 throw cancellationException
@@ -321,6 +396,14 @@ fun EditProfileScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     SectionHeader(title = "Location")
 
+                    if (locationLoading) {
+                        HelperText(text = "Loading location options...")
+                    }
+
+                    if (locationInfo.isNotBlank()) {
+                        HelperText(text = locationInfo)
+                    }
+
                     LocationSelector(
                         country = profile.country.orEmpty(),
                         city = profile.city.orEmpty(),
@@ -338,7 +421,8 @@ fun EditProfileScreen(
                         onNeighborhoodChange = {
                             profile = profile.copy(neighborhood = it)
                         },
-                        locationData = locationData
+                        locationData = availableLocationData,
+                        enabled = !locationLoading
                     )
 
                     AppTextField(
@@ -347,9 +431,40 @@ fun EditProfileScreen(
                         label = "Extra Address"
                     )
 
+                    LocationSelectionMapAction(
+                        countryKeyOrLabel = profile.country,
+                        cityKeyOrLabel = profile.city,
+                        districtKeyOrLabel = profile.district,
+                        neighborhoodValueOrLabel = profile.neighborhood,
+                        extraAddress = profile.extraAddress,
+                        locations = availableLocationData,
+                        enabled = !loading,
+                        onOpenFailure = { mapActionInfo = it },
+                        onOpenSuccess = { mapActionInfo = "" }
+                    )
+
+                    SharedCoordinatesMapAction(
+                        latitude = syncedSharedLatitude,
+                        longitude = syncedSharedLongitude,
+                        enabled = !loading,
+                        onOpenFailure = { mapActionInfo = it },
+                        onOpenSuccess = { mapActionInfo = "" }
+                    )
+
                     AppToggleSwitch(
                         checked = profile.shareLocation ?: false,
-                        onCheckedChange = { profile = profile.copy(shareLocation = it) },
+                        onCheckedChange = { shareEnabled ->
+                            if (!shareEnabled) {
+                                profile = profile.copy(shareLocation = false)
+                                return@AppToggleSwitch
+                            }
+
+                            if (DeviceLocationProvider.hasLocationPermission(context)) {
+                                profile = profile.copy(shareLocation = true)
+                            } else {
+                                locationPermissionLauncher.launch(DeviceLocationProvider.RequiredLocationPermissions)
+                            }
+                        },
                         label = "Share Current Location"
                     )
                 }
@@ -361,6 +476,10 @@ fun EditProfileScreen(
 
             if (info.isNotBlank()) {
                 HelperText(text = info)
+            }
+
+            if (mapActionInfo.isNotBlank()) {
+                HelperText(text = mapActionInfo)
             }
 
             PrimaryButton(

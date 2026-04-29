@@ -2,11 +2,13 @@ package com.neph.features.profile.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.neph.BuildConfig
 import com.neph.core.network.JsonHttpClient
 import com.neph.features.auth.data.AuthSessionStore
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
+import java.util.Locale
 
 object ProfileRepository {
     private const val PrefsName = "neph_profile"
@@ -39,14 +41,29 @@ object ProfileRepository {
     }
 
     fun resetForTesting() {
+        requireDebugBuildForTestingReset()
+
         cachedProfile = ProfileData()
         if (::prefs.isInitialized) {
             prefs.edit().clear().commit()
         }
     }
 
+    private fun requireDebugBuildForTestingReset() {
+        check(BuildConfig.DEBUG) {
+            "ProfileRepository.resetForTesting() is only available in debug/e2e test builds."
+        }
+    }
+
     suspend fun fetchAndCacheRemoteProfile(): ProfileData {
         ensureInitialized()
+
+        try {
+            LocationTreeRepository.ensureLocationData()
+        } catch (_: Exception) {
+            // Keep fallback location mapping when location tree is unavailable.
+        }
+
         val token = AuthSessionStore.getAccessToken().orEmpty()
         check(token.isNotBlank()) { "Access token is required before loading the profile." }
 
@@ -75,8 +92,19 @@ object ProfileRepository {
         return mapped
     }
 
-    suspend fun syncProfile(profile: ProfileData): ProfileData {
+    suspend fun syncProfile(
+        profile: ProfileData,
+        currentDeviceLocation: CurrentDeviceLocation? = null,
+        forceClearSharedCoordinates: Boolean = false
+    ): ProfileData {
         ensureInitialized()
+
+        try {
+            LocationTreeRepository.ensureLocationData()
+        } catch (_: Exception) {
+            // Keep fallback location mapping when location tree is unavailable.
+        }
+
         val token = AuthSessionStore.getAccessToken().orEmpty()
         check(token.isNotBlank()) { "Access token is required before saving the profile." }
 
@@ -119,25 +147,11 @@ object ProfileRepository {
                 }
             )
 
-            JsonHttpClient.request(
-                path = "/profiles/me/location",
-                method = "PATCH",
+            patchLocationProfile(
                 token = token,
-                body = JSONObject().apply {
-                    putNullable("country", profile.country?.takeIf(String::isNotBlank)?.let { locationData[it]?.label ?: it })
-                    putNullable(
-                        "city",
-                        profile.city?.takeIf(String::isNotBlank)?.let {
-                            profile.country?.let { countryKey ->
-                                locationData[countryKey]?.cities?.get(it)?.label
-                            } ?: it
-                        }
-                    )
-                    putNullable(
-                        "address",
-                        buildAddress(profile.district, profile.neighborhood, profile.extraAddress)
-                    )
-                }
+                profile = profile,
+                currentDeviceLocation = currentDeviceLocation,
+                forceClearSharedCoordinates = forceClearSharedCoordinates
             )
 
             JsonHttpClient.request(
@@ -185,6 +199,121 @@ object ProfileRepository {
         }
     }
 
+    suspend fun syncLocationOnLaunch(
+        profile: ProfileData,
+        currentDeviceLocation: CurrentDeviceLocation? = null,
+        forceClearSharedCoordinates: Boolean = false
+    ) {
+        ensureInitialized()
+
+        try {
+            LocationTreeRepository.ensureLocationData()
+        } catch (_: Exception) {
+            // Keep fallback location mapping when location tree is unavailable.
+        }
+
+        val token = AuthSessionStore.getAccessToken().orEmpty()
+        check(token.isNotBlank()) { "Access token is required before sending launch location update." }
+
+        patchLocationProfile(
+            token = token,
+            profile = profile,
+            currentDeviceLocation = currentDeviceLocation,
+            forceClearSharedCoordinates = forceClearSharedCoordinates
+        )
+    }
+
+    private suspend fun patchLocationProfile(
+        token: String,
+        profile: ProfileData,
+        currentDeviceLocation: CurrentDeviceLocation? = null,
+        forceClearSharedCoordinates: Boolean = false
+    ) {
+        JsonHttpClient.request(
+            path = "/profiles/me/location",
+            method = "PATCH",
+            token = token,
+            body = buildLocationPatchPayload(
+                profile = profile,
+                currentDeviceLocation = currentDeviceLocation,
+                forceClearSharedCoordinates = forceClearSharedCoordinates
+            )
+        )
+    }
+
+    internal fun buildLocationPatchPayload(
+        profile: ProfileData,
+        currentDeviceLocation: CurrentDeviceLocation? = null,
+        forceClearSharedCoordinates: Boolean = false
+    ): JSONObject {
+        val selectedCountry = profile.country?.trim()?.takeIf(String::isNotBlank)
+        val resolvedCountryKey = resolveCountrySelectionKey(selectedCountry)
+        val countryLookupValue = resolvedCountryKey ?: selectedCountry
+        val backendCountryCode = resolvedCountryKey?.uppercase(Locale.ROOT)
+        val countryLabel = resolveCountryLabel(countryLookupValue)
+        val cityLabel = resolveCityLabel(countryLookupValue, profile.city)
+        val districtLabel = resolveDistrictLabel(countryLookupValue, profile.city, profile.district)
+        val neighborhoodLabel = resolveNeighborhoodLabel(
+            countryLookupValue,
+            profile.city,
+            profile.district,
+            profile.neighborhood
+        )
+        val normalizedExtraAddress = profile.extraAddress?.trim()?.takeIf(String::isNotBlank)
+        val displayAddress = buildAddress(districtLabel, neighborhoodLabel, normalizedExtraAddress)
+
+        return JSONObject().apply {
+            putNullable("country", countryLabel)
+            putNullable("city", cityLabel)
+            putNullable("address", displayAddress)
+            putNullable("displayAddress", displayAddress)
+
+            put(
+                "administrative",
+                JSONObject().apply {
+                    putNullable("countryCode", backendCountryCode)
+                    putNullable("country", countryLabel)
+                    putNullable("city", cityLabel)
+                    putNullable("district", districtLabel)
+                    putNullable("neighborhood", neighborhoodLabel)
+                    putNullable("extraAddress", normalizedExtraAddress)
+                }
+            )
+
+            when {
+                profile.shareLocation != true || forceClearSharedCoordinates -> {
+                    putNullable("latitude", null)
+                    putNullable("longitude", null)
+                    put(
+                        "coordinate",
+                        JSONObject().apply {
+                            putNullable("latitude", null)
+                            putNullable("longitude", null)
+                            putNullable("accuracyMeters", null)
+                            putNullable("source", null)
+                            putNullable("capturedAt", null)
+                        }
+                    )
+                }
+
+                currentDeviceLocation != null -> {
+                    put("latitude", currentDeviceLocation.latitude)
+                    put("longitude", currentDeviceLocation.longitude)
+                    put(
+                        "coordinate",
+                        JSONObject().apply {
+                            put("latitude", currentDeviceLocation.latitude)
+                            put("longitude", currentDeviceLocation.longitude)
+                            putNullable("accuracyMeters", currentDeviceLocation.accuracyMeters)
+                            putNullable("source", currentDeviceLocation.source)
+                            putNullable("capturedAt", currentDeviceLocation.capturedAt)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     private fun persistProfile(profile: ProfileData) {
         prefs.edit().apply {
             putString("fullName", profile.fullName)
@@ -206,6 +335,8 @@ object ProfileRepository {
             putString("neighborhood", profile.neighborhood)
             putString("extraAddress", profile.extraAddress)
             putBoolean("shareLocation", profile.shareLocation ?: false)
+            putString("sharedLatitude", profile.sharedLatitude?.toString())
+            putString("sharedLongitude", profile.sharedLongitude?.toString())
         }.apply()
     }
 
@@ -240,7 +371,9 @@ object ProfileRepository {
             district = prefs.getString("district", null),
             neighborhood = prefs.getString("neighborhood", null),
             extraAddress = prefs.getString("extraAddress", null),
-            shareLocation = if (prefs.contains("shareLocation")) prefs.getBoolean("shareLocation", false) else null
+            shareLocation = if (prefs.contains("shareLocation")) prefs.getBoolean("shareLocation", false) else null,
+            sharedLatitude = prefs.getString("sharedLatitude", null)?.toDoubleOrNull(),
+            sharedLongitude = prefs.getString("sharedLongitude", null)?.toDoubleOrNull()
         )
     }
 
@@ -255,16 +388,41 @@ object ProfileRepository {
         val locationProfile = profileJson.optJSONObject("locationProfile") ?: JSONObject()
         val privacySettings = profileJson.optJSONObject("privacySettings") ?: JSONObject()
         val expertise = profileJson.optJSONArray("expertise")?.optJSONObject(0)
+        val administrative = locationProfile.optJSONObject("administrative") ?: JSONObject()
+        val coordinate = locationProfile.optJSONObject("coordinate") ?: JSONObject()
 
-        val countryLabel = locationProfile.optStringOrNull("country")
-        val cityLabel = locationProfile.optStringOrNull("city")
-        val countryKey = findCountryKeyByLabel(locationProfile.optStringOrNull("country"))
+        val countryLabel = administrative.optStringOrNull("country")
+            ?: locationProfile.optStringOrNull("country")
+        val cityLabel = administrative.optStringOrNull("city")
+            ?: locationProfile.optStringOrNull("city")
+        val countryCode = administrative.optStringOrNull("countryCode")
+        val countryKey = countryCode
+            ?.lowercase()
+            ?.takeIf { locationData.containsKey(it) }
+            ?: findCountryKeyByLabel(countryLabel)
         val cityKey = findCityKeyByLabel(countryKey, cityLabel)
-        val address = locationProfile.optStringOrNull("address")
+        val address = locationProfile.optStringOrNull("displayAddress")
+            ?: locationProfile.optStringOrNull("address")
         val parsedAddress = parseLocationAddress(countryKey, cityKey, address)
-        val districtKey = parsedAddress.first
-        val neighborhoodValue = parsedAddress.second
-        val extraAddressFromBackend = parsedAddress.third
+        val districtFromAdministrative = findDistrictKeyByLabel(
+            countryKey,
+            cityKey,
+            administrative.optStringOrNull("district")
+        )
+        val districtKey = districtFromAdministrative.ifBlank { parsedAddress.first }
+        val neighborhoodFromAdministrative = findNeighborhoodValueByLabel(
+            countryKey,
+            cityKey,
+            districtKey,
+            administrative.optStringOrNull("neighborhood")
+        )
+        val neighborhoodValue = neighborhoodFromAdministrative.ifBlank { parsedAddress.second }
+        val extraAddressFromBackend = administrative.optStringOrNull("extraAddress")
+            ?: parsedAddress.third
+        val sharedLatitude = coordinate.optNullableDouble("latitude")
+            ?: locationProfile.optNullableDouble("latitude")
+        val sharedLongitude = coordinate.optNullableDouble("longitude")
+            ?: locationProfile.optNullableDouble("longitude")
 
         return ProfileData(
             fullName = listOf(
@@ -293,7 +451,9 @@ object ProfileRepository {
                 .takeIf { it.isNotBlank() },
             extraAddress = extraAddressFromBackend
                 ?: cachedProfileSnapshot.extraAddress,
-            shareLocation = privacySettings.optNullableBoolean("locationSharingEnabled")
+            shareLocation = privacySettings.optNullableBoolean("locationSharingEnabled"),
+            sharedLatitude = sharedLatitude,
+            sharedLongitude = sharedLongitude
         )
     }
 
@@ -399,6 +559,10 @@ object ProfileRepository {
 
     private fun JSONObject.optNullableBoolean(key: String): Boolean? {
         return if (has(key) && !isNull(key)) optBoolean(key) else null
+    }
+
+    private fun JSONObject.optNullableDouble(key: String): Double? {
+        return if (has(key) && !isNull(key)) optDouble(key) else null
     }
 
     private fun ensureInitialized() {

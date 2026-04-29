@@ -2,6 +2,7 @@ package com.neph.features.requesthelp.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.neph.BuildConfig
 import com.neph.core.NephAppContext
 import com.neph.core.database.HelpRequestEntity
 import com.neph.core.database.NephDatabaseProvider
@@ -15,12 +16,23 @@ import com.neph.core.sync.SyncEntityType
 import com.neph.core.sync.SyncOperationStatus
 import com.neph.core.sync.SyncOperationType
 import com.neph.core.sync.SyncStatus
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.util.Locale
 import java.util.UUID
 
+internal data class AssignedResponderSnapshot(
+    val firstName: String?,
+    val lastName: String?,
+    val phone: String?,
+    val profession: String?,
+    val expertise: String?
+)
+
 private const val PendingHelpRequestStatus = "PENDING_SYNC"
+private const val ReverseGeocodeTimeoutMillis = 7000L
 
 data class RequestHelpLocationSubmission(
     val country: String,
@@ -28,6 +40,15 @@ data class RequestHelpLocationSubmission(
     val district: String,
     val neighborhood: String,
     val extraAddress: String
+)
+
+data class RequestHelpReverseLocation(
+    val countryCode: String? = null,
+    val country: String? = null,
+    val city: String? = null,
+    val district: String? = null,
+    val neighborhood: String? = null,
+    val extraAddress: String? = null
 )
 
 data class RequestHelpContactSubmission(
@@ -160,8 +181,16 @@ object RequestHelpRepository {
     }
 
     fun resetForTesting() {
+        requireDebugBuildForTestingReset()
+
         if (::prefs.isInitialized) {
             prefs.edit().clear().commit()
+        }
+    }
+
+    private fun requireDebugBuildForTestingReset() {
+        check(BuildConfig.DEBUG) {
+            "RequestHelpRepository.resetForTesting() is only available in debug/e2e test builds."
         }
     }
 
@@ -174,6 +203,36 @@ object RequestHelpRepository {
         )
 
         return response.optJSONObject("request")
+    }
+
+    suspend fun reverseGeocodeCurrentLocation(
+        latitude: Double,
+        longitude: Double
+    ): RequestHelpReverseLocation? {
+        ensureInitialized()
+
+        val response = withTimeoutOrNull(ReverseGeocodeTimeoutMillis) {
+            JsonHttpClient.request(
+                path = String.format(
+                    Locale.US,
+                    "/location/reverse?lat=%.6f&lon=%.6f",
+                    latitude,
+                    longitude
+                )
+            )
+        } ?: return null
+
+        val item = response.optJSONObject("item") ?: return null
+        val administrative = item.optJSONObject("administrative") ?: JSONObject()
+
+        return RequestHelpReverseLocation(
+            countryCode = administrative.optTrimmedString("countryCode"),
+            country = administrative.optTrimmedString("country"),
+            city = administrative.optTrimmedString("city"),
+            district = administrative.optTrimmedString("district"),
+            neighborhood = administrative.optTrimmedString("neighborhood"),
+            extraAddress = administrative.optTrimmedString("extraAddress")
+        )
     }
 
     internal suspend fun pushCreateOperation(operation: SyncOperationEntity, token: String?) {
@@ -364,6 +423,10 @@ object RequestHelpRepository {
     }
 }
 
+private fun JSONObject.optTrimmedString(key: String): String? {
+    return optString(key).trim().takeIf { it.isNotBlank() }
+}
+
 internal fun RequestHelpSubmission.toJson(): JSONObject {
     return JSONObject().apply {
         put("helpTypes", JSONArray(helpTypes))
@@ -422,11 +485,16 @@ internal fun RequestHelpSubmission.toEntity(
         contactPhone = contact.phone.toString(),
         contactAlternativePhone = contact.alternativePhone?.toString(),
         status = PendingHelpRequestStatus,
+        urgencyLevel = null,
+        priorityLevel = null,
+        resolvedAt = null,
+        cancelledAt = null,
         helperFirstName = null,
         helperLastName = null,
         helperPhone = null,
         helperProfession = null,
         helperExpertise = null,
+        helpersJson = JSONArray().toString(),
         syncStatus = syncStatus,
         pendingError = null,
         createdAtEpochMillis = now,
@@ -446,7 +514,14 @@ internal fun JSONObject.toHelpRequestEntity(
     val remoteId = optString("id").takeIf { it.isNotBlank() }
     val location = optJSONObject("location") ?: JSONObject()
     val contact = optJSONObject("contact") ?: JSONObject()
-    val helper = optJSONObject("helper")
+    val helpers = optJSONArray("helpers")
+        ?.toAssignedResponderSnapshots()
+        ?.takeIf { it.isNotEmpty() }
+        ?: optJSONObject("helper")
+            ?.toAssignedResponderSnapshot()
+            ?.let(::listOf)
+        ?: emptyList()
+    val primaryHelper = helpers.firstOrNull()
 
     return HelpRequestEntity(
         localId = existing?.localId ?: remoteId ?: "remote_${UUID.randomUUID()}",
@@ -469,11 +544,16 @@ internal fun JSONObject.toHelpRequestEntity(
         contactPhone = contact.opt("phone")?.toString().orEmpty(),
         contactAlternativePhone = contact.opt("alternativePhone")?.toString()?.takeIf { it.isNotBlank() && it != "null" },
         status = optString("status").ifBlank { existing?.status ?: "SYNCED" },
-        helperFirstName = helper?.optString("firstName")?.takeIf { it.isNotBlank() },
-        helperLastName = helper?.optString("lastName")?.takeIf { it.isNotBlank() },
-        helperPhone = helper?.opt("phone")?.toString()?.takeIf { it.isNotBlank() && it != "null" },
-        helperProfession = helper?.optString("profession")?.takeIf { it.isNotBlank() },
-        helperExpertise = helper?.optString("expertise")?.takeIf { it.isNotBlank() },
+        urgencyLevel = optString("urgencyLevel").takeIf { it.isNotBlank() } ?: existing?.urgencyLevel,
+        priorityLevel = optString("priorityLevel").takeIf { it.isNotBlank() } ?: existing?.priorityLevel,
+        resolvedAt = optString("resolvedAt").takeIf { it.isNotBlank() } ?: existing?.resolvedAt,
+        cancelledAt = optString("cancelledAt").takeIf { it.isNotBlank() } ?: existing?.cancelledAt,
+        helperFirstName = primaryHelper?.firstName,
+        helperLastName = primaryHelper?.lastName,
+        helperPhone = primaryHelper?.phone,
+        helperProfession = primaryHelper?.profession,
+        helperExpertise = primaryHelper?.expertise,
+        helpersJson = helpers.toJsonArrayString(),
         syncStatus = SyncStatus.SYNCED,
         pendingError = null,
         createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
@@ -485,6 +565,42 @@ internal fun JSONObject.toHelpRequestEntity(
 }
 
 internal fun JSONArray?.orEmptyJsonArrayString(): String = (this ?: JSONArray()).toString()
+
+internal fun JSONArray.toAssignedResponderSnapshots(): List<AssignedResponderSnapshot> {
+    return buildList {
+        for (index in 0 until length()) {
+            optJSONObject(index)
+                ?.toAssignedResponderSnapshot()
+                ?.let(::add)
+        }
+    }
+}
+
+internal fun JSONObject.toAssignedResponderSnapshot(): AssignedResponderSnapshot {
+    return AssignedResponderSnapshot(
+        firstName = optString("firstName").trim().takeIf { it.isNotBlank() },
+        lastName = optString("lastName").trim().takeIf { it.isNotBlank() },
+        phone = opt("phone")?.toString()?.takeIf { it.isNotBlank() && it != "null" },
+        profession = optString("profession").trim().takeIf { it.isNotBlank() },
+        expertise = optString("expertise").trim().takeIf { it.isNotBlank() }
+    )
+}
+
+internal fun List<AssignedResponderSnapshot>.toJsonArrayString(): String {
+    return JSONArray().apply {
+        this@toJsonArrayString.forEach { helper ->
+            put(
+                JSONObject().apply {
+                    put("firstName", helper.firstName)
+                    put("lastName", helper.lastName)
+                    put("phone", helper.phone)
+                    put("profession", helper.profession)
+                    put("expertise", helper.expertise)
+                }
+            )
+        }
+    }.toString()
+}
 
 internal fun String.jsonArrayToStringList(): List<String> {
     val json = runCatching { JSONArray(this) }.getOrNull() ?: return emptyList()

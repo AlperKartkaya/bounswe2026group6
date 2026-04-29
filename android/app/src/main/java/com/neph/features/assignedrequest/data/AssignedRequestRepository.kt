@@ -10,6 +10,9 @@ import com.neph.core.sync.OfflineSyncScheduler
 import com.neph.core.sync.SyncEntityType
 import com.neph.core.sync.SyncOperationType
 import com.neph.core.sync.SyncStatus
+import com.neph.features.requesthelp.data.buildDurationLabel
+import com.neph.features.requesthelp.data.formatLifecycleTimestamp
+import com.neph.features.requesthelp.data.formatOperationalLevel
 import com.neph.features.requesthelp.data.jsonArrayToStringList
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -38,6 +41,10 @@ data class AssignedRequestUiModel(
     val contactPhone: String?,
     val contactAlternativePhone: String?,
     val assignedAt: String?,
+    val urgencyLabel: String?,
+    val priorityLabel: String?,
+    val openedAtLabel: String?,
+    val openDurationLabel: String?,
     val syncStatus: String = SyncStatus.SYNCED,
     val pendingError: String? = null
 ) {
@@ -133,7 +140,7 @@ object AssignedRequestRepository {
         )
     }
 
-    private fun mapAssignmentEntity(assignment: JSONObject, syncStatus: String): AssignedRequestEntity {
+    internal fun mapAssignmentEntity(assignment: JSONObject, syncStatus: String): AssignedRequestEntity {
         val description = assignment.optString("description").trim()
         val firstName = assignment.optString("requester_first_name").trim()
         val lastName = assignment.optString("requester_last_name").trim()
@@ -143,6 +150,18 @@ object AssignedRequestRepository {
             .takeIf { it.isNotBlank() }
         val helpTypes = assignment.optJSONArray("help_types").toStringList()
         val status = assignment.optString("request_status").ifBlank { "ASSIGNED" }
+        val urgencyLevel = assignment.optString("urgencyLevel")
+            .ifBlank { assignment.optString("urgency_level") }
+            .trim()
+            .ifBlank { null }
+        val priorityLevel = assignment.optString("priorityLevel")
+            .ifBlank { assignment.optString("priority_level") }
+            .trim()
+            .ifBlank { null }
+        val openedAt = assignment.optString("openedAt")
+            .ifBlank { assignment.optString("opened_at") }
+            .trim()
+            .ifBlank { null }
         val now = System.currentTimeMillis()
 
         return AssignedRequestEntity(
@@ -158,13 +177,16 @@ object AssignedRequestRepository {
             bloodType = assignment.optString("blood_type").trim().takeIf { it.isNotBlank() },
             locationLabel = buildLocationLabel(assignment),
             status = status,
+            urgencyLevel = urgencyLevel,
+            priorityLevel = priorityLevel,
             requesterName = requesterName,
             requesterEmail = assignment.optString("requester_email").takeIf { it.isNotBlank() },
             contactFullName = assignment.optString("contact_full_name").trim().takeIf { it.isNotBlank() },
             contactPhone = assignment.opt("contact_phone")?.toString()?.takeIf { it.isNotBlank() },
             contactAlternativePhone = assignment.opt("contact_alternative_phone")?.toString()
                 ?.takeIf { it.isNotBlank() },
-            assignedAt = assignment.optString("assigned_at").takeIf { it.isNotBlank() }?.let(::formatTimestamp),
+            assignedAt = assignment.optString("assigned_at").takeIf { it.isNotBlank() }?.let(::formatLifecycleTimestamp),
+            openedAt = openedAt,
             syncStatus = syncStatus,
             pendingError = null,
             fetchedAtEpochMillis = now,
@@ -173,7 +195,7 @@ object AssignedRequestRepository {
         )
     }
 
-    private fun AssignedRequestEntity.toUiModel(): AssignedRequestUiModel {
+    internal fun AssignedRequestEntity.toUiModel(): AssignedRequestUiModel {
         val formattedHelpTypes = helpTypesJson.jsonArrayToStringList().map(::formatValue)
         val statusLabel = when (syncStatus) {
             SyncStatus.PENDING_DELETE -> "Release waiting to sync"
@@ -204,6 +226,10 @@ object AssignedRequestRepository {
             contactPhone = contactPhone,
             contactAlternativePhone = contactAlternativePhone,
             assignedAt = assignedAt,
+            urgencyLabel = formatOperationalLevel(urgencyLevel),
+            priorityLabel = formatOperationalLevel(priorityLevel),
+            openedAtLabel = formatLifecycleTimestamp(openedAt),
+            openDurationLabel = buildDurationLabel(openedAtRaw = openedAt),
             syncStatus = syncStatus,
             pendingError = pendingError
         )
@@ -272,13 +298,6 @@ object AssignedRequestRepository {
         } else {
             normalized
         }
-    }
-
-    private fun formatTimestamp(raw: String): String {
-        return raw
-            .replace('T', ' ')
-            .substringBefore('.')
-            .substringBefore('Z')
     }
 
     private fun JSONArray?.toStringList(): List<String> {

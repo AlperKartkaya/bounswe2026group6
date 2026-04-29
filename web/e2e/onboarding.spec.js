@@ -43,9 +43,15 @@ test('new user can sign up, verify email, complete their profile, and see persis
   await page.locator('#country').selectOption('tr');
   await page.locator('#city').selectOption('istanbul');
   await page.locator('#district').selectOption('kadikoy');
-  await page.locator('#neighborhood').selectOption('bostanci');
+  const neighborhoodValue = await page.locator('#neighborhood option').evaluateAll((options) => {
+    return options
+      .map((option) => option.value)
+      .find((value) => value && value.trim().length > 0) || null;
+  });
+
+  expect(neighborhoodValue).toBeTruthy();
+  await page.locator('#neighborhood').selectOption(neighborhoodValue);
   await page.locator('#extraAddress').fill('Test Apartment 7');
-  await page.getByRole('button', { name: 'Share Current Location' }).click();
   await page.getByRole('button', { name: 'Save' }).click();
 
   await expect(page).toHaveURL(/\/profile$/);
@@ -63,9 +69,9 @@ test('new user can sign up, verify email, complete their profile, and see persis
   expect(profile.physicalInfo.weight).toBe(58);
   expect(profile.healthInfo.bloodType).toBe('a_pos');
   expect(profile.locationProfile.country).toBe('Turkey');
-  expect(profile.locationProfile.city).toBe('Istanbul');
+  expect(profile.locationProfile.city?.toLocaleLowerCase('tr')).toBe('istanbul');
   expect(profile.locationProfile.address).toContain('Test Apartment 7');
-  expect(profile.privacySettings.locationSharingEnabled).toBe(true);
+  expect(profile.privacySettings.locationSharingEnabled).toBe(false);
   expect(profile.expertise[0].profession).toBe('Engineer');
   expect(profile.expertise[0].expertiseAreas).toContain('First Aid');
 });

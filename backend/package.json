@@ -6,6 +6,12 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch src/server.js",
+<<<<<<< HEAD
+=======
+    "migrate": "node scripts/apply-migrations.js",
+    "cleanup:notifications": "node scripts/cleanup-notifications.js",
+    "start:with-migrations": "npm run migrate && npm start",
+>>>>>>> feat/news-announcements
     "start": "node src/server.js",
     "test": "jest --runInBand",
     "test:unit": "jest --selectProjects unit",
@@ -21,6 +27,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.3.1",
+    "firebase-admin": "^13.8.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^8.0.4",
     "pg": "^8.13.3",

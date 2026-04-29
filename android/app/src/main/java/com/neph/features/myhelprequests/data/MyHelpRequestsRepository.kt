@@ -10,6 +10,9 @@ import com.neph.core.sync.OfflineSyncScheduler
 import com.neph.core.sync.SyncEntityType
 import com.neph.core.sync.SyncOperationType
 import com.neph.core.sync.SyncStatus
+import com.neph.features.requesthelp.data.buildDurationLabel
+import com.neph.features.requesthelp.data.formatLifecycleTimestamp
+import com.neph.features.requesthelp.data.formatOperationalLevel
 import com.neph.features.requesthelp.data.RequestHelpRepository
 import com.neph.features.requesthelp.data.jsonArrayToStringList
 import com.neph.features.requesthelp.data.toHelpRequestEntity
@@ -32,6 +35,7 @@ data class MyHelpRequestUiModel(
     val contactName: String?,
     val contactPhone: String?,
     val alternativePhone: String?,
+    val responders: List<AssignedResponderUiModel>,
     val helperFirstName: String?,
     val helperLastName: String?,
     val helperPhone: String?,
@@ -39,6 +43,11 @@ data class MyHelpRequestUiModel(
     val helperExpertise: String?,
     val helperFullName: String?,
     val createdAt: String?,
+    val urgencyLabel: String?,
+    val priorityLabel: String?,
+    val closedAtLabel: String?,
+    val closedStateLabel: String?,
+    val openDurationLabel: String?,
     val syncStatus: String = SyncStatus.SYNCED,
     val pendingError: String? = null,
     val lastSyncedAt: String? = null
@@ -48,6 +57,38 @@ data class MyHelpRequestUiModel(
 
     val isFailedSync: Boolean
         get() = syncStatus == SyncStatus.FAILED || syncStatus == SyncStatus.CONFLICTED
+}
+
+data class MyHelpRequestsOverviewUiModel(
+    val totalRequests: Int,
+    val activeRequests: List<MyHelpRequestUiModel>,
+    val historyRequests: List<MyHelpRequestUiModel>,
+    val resolvedCount: Int,
+    val cancelledCount: Int,
+    val assignedResponderCount: Int
+) {
+    val activeCount: Int
+        get() = activeRequests.size
+
+    val historyCount: Int
+        get() = historyRequests.size
+
+    val hasMultipleRequestContext: Boolean
+        get() = totalRequests > 1 || historyCount > 0
+}
+
+data class AssignedResponderUiModel(
+    val firstName: String?,
+    val lastName: String?,
+    val phone: String?,
+    val profession: String?,
+    val expertise: String?
+) {
+    val fullName: String?
+        get() = listOfNotNull(firstName, lastName).joinToString(" ").trim().takeIf { it.isNotBlank() }
+
+    val hasVisibleDetails: Boolean
+        get() = fullName != null || phone != null || profession != null || expertise != null
 }
 
 object MyHelpRequestsRepository {
@@ -162,6 +203,22 @@ object MyHelpRequestsRepository {
     }
 }
 
+internal fun buildMyHelpRequestsOverview(
+    requests: List<MyHelpRequestUiModel>
+): MyHelpRequestsOverviewUiModel {
+    val activeRequests = requests.filter { it.isActive }
+    val historyRequests = requests.filterNot { it.isActive }
+
+    return MyHelpRequestsOverviewUiModel(
+        totalRequests = requests.size,
+        activeRequests = activeRequests,
+        historyRequests = historyRequests,
+        resolvedCount = requests.count { it.status.trim().uppercase() == "RESOLVED" },
+        cancelledCount = requests.count { it.status.trim().uppercase() == "CANCELLED" },
+        assignedResponderCount = activeRequests.sumOf { request -> request.responders.size }
+    )
+}
+
 internal fun HelpRequestEntity.toUiModel(): MyHelpRequestUiModel {
     val helpTypes = helpTypesJson.jsonArrayToStringList().map(::formatHelpType)
     val riskStatusLabel = when (syncStatus) {
@@ -172,8 +229,37 @@ internal fun HelpRequestEntity.toUiModel(): MyHelpRequestUiModel {
         else -> formatStatus(status)
     }
     val displayId = remoteId ?: localId
-    val created = serverCreatedAt?.let(::formatTimestamp)
+    val created = serverCreatedAt?.let(::formatLifecycleTimestamp)
         ?: formatEpochMillis(createdAtEpochMillis)
+    val closedAtRaw = cancelledAt ?: resolvedAt
+    val closedStateLabel = when (status.trim().uppercase()) {
+        "RESOLVED" -> "Resolved"
+        "CANCELLED" -> "Cancelled"
+        else -> null
+    }
+    val responders = helpersJson.jsonArrayToAssignedResponderList()
+        .ifEmpty {
+            buildList {
+                if (
+                    helperFirstName != null ||
+                    helperLastName != null ||
+                    helperPhone != null ||
+                    helperProfession != null ||
+                    helperExpertise != null
+                ) {
+                    add(
+                        AssignedResponderUiModel(
+                            firstName = helperFirstName,
+                            lastName = helperLastName,
+                            phone = helperPhone,
+                            profession = helperProfession,
+                            expertise = helperExpertise
+                        )
+                    )
+                }
+            }
+        }
+    val primaryResponder = responders.firstOrNull()
 
     return MyHelpRequestUiModel(
         id = displayId,
@@ -189,19 +275,50 @@ internal fun HelpRequestEntity.toUiModel(): MyHelpRequestUiModel {
         contactName = contactFullName.takeIf { it.isNotBlank() },
         contactPhone = contactPhone.takeIf { it.isNotBlank() },
         alternativePhone = contactAlternativePhone,
-        helperFirstName = helperFirstName,
-        helperLastName = helperLastName,
-        helperPhone = helperPhone,
-        helperProfession = helperProfession,
-        helperExpertise = helperExpertise,
-        helperFullName = listOfNotNull(helperFirstName, helperLastName)
-            .joinToString(" ")
-            .trim()
-            .takeIf { it.isNotBlank() },
+        responders = responders,
+        helperFirstName = primaryResponder?.firstName,
+        helperLastName = primaryResponder?.lastName,
+        helperPhone = primaryResponder?.phone,
+        helperProfession = primaryResponder?.profession,
+        helperExpertise = primaryResponder?.expertise,
+        helperFullName = primaryResponder?.fullName,
         createdAt = created,
+        urgencyLabel = formatOperationalLevel(urgencyLevel),
+        priorityLabel = formatOperationalLevel(priorityLevel),
+        closedAtLabel = formatLifecycleTimestamp(closedAtRaw),
+        closedStateLabel = closedStateLabel,
+        openDurationLabel = buildDurationLabel(
+            openedAtRaw = serverCreatedAt,
+            closedAtRaw = closedAtRaw,
+            fallbackOpenedAtEpochMillis = createdAtEpochMillis
+        ),
         syncStatus = syncStatus,
         pendingError = pendingError,
         lastSyncedAt = lastSyncedAtEpochMillis?.let(::formatEpochMillis)
+    )
+}
+
+private fun String.jsonArrayToAssignedResponderList(): List<AssignedResponderUiModel> {
+    return runCatching { JSONArray(this) }
+        .getOrNull()
+        ?.let { json ->
+            buildList {
+                for (index in 0 until json.length()) {
+                    val value = json.optJSONObject(index)?.toAssignedResponderUiModel() ?: continue
+                    add(value)
+                }
+            }
+        }
+        ?: emptyList()
+}
+
+private fun org.json.JSONObject.toAssignedResponderUiModel(): AssignedResponderUiModel {
+    return AssignedResponderUiModel(
+        firstName = optString("firstName").trim().takeIf { it.isNotBlank() },
+        lastName = optString("lastName").trim().takeIf { it.isNotBlank() },
+        phone = opt("phone")?.toString()?.takeIf { it.isNotBlank() && it != "null" },
+        profession = optString("profession").trim().takeIf { it.isNotBlank() },
+        expertise = optString("expertise").trim().takeIf { it.isNotBlank() }
     )
 }
 
@@ -261,13 +378,6 @@ private fun buildShortDescription(description: String): String {
     } else {
         normalized
     }
-}
-
-private fun formatTimestamp(raw: String): String {
-    return raw
-        .replace('T', ' ')
-        .substringBefore('.')
-        .substringBefore('Z')
 }
 
 private fun formatEpochMillis(raw: Long): String {
