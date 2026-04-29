@@ -4,6 +4,9 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 
 jest.mock('express-rate-limit', () => () => (_req, _res, next) => next());
+jest.mock('uuid', () => ({
+  v4: () => require('crypto').randomBytes(16).toString('hex'),
+}));
 jest.mock('../../../../src/config/mailer', () => ({
   sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
   sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
