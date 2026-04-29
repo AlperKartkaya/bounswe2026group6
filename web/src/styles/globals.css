@@ -1226,6 +1226,39 @@ textarea::placeholder {
     gap: 10px;
 }
 
+.admin-announcements-form {
+    margin-top: 16px;
+    display: grid;
+    gap: 14px;
+}
+
+.admin-announcements-list {
+    margin-top: 16px;
+    display: grid;
+    gap: 12px;
+}
+
+.admin-announcements-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    background: var(--surface-card);
+    padding: 14px;
+}
+
+.admin-announcements-card-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.admin-announcements-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+}
+
 .root-layout-body {
     display: flex;
     min-height: 100vh;

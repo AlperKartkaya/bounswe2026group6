@@ -55,6 +55,7 @@ async function requireAdmin(req, res, next) {
 
     req.user.isAdmin = true;
     req.user.adminRole = adminRecord.role;
+    req.user.adminId = adminRecord.admin_id;
 
     return next();
   } catch (_error) {
