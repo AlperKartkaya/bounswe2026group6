@@ -5,6 +5,7 @@ const {
   listHelpRequests,
   getHelpRequest,
   patchHelpRequestStatus,
+  listActiveHelpRequests,
 } = require('./controller');
 
 const helpRequestsRouter = express.Router();
@@ -14,6 +15,7 @@ helpRequestsRouter.post('/', optionalAuth, createHelpRequest);
 
 // These routes require authentication
 helpRequestsRouter.get('/', requireAuth, listHelpRequests);
+helpRequestsRouter.get('/active', optionalAuth, listActiveHelpRequests);
 helpRequestsRouter.get('/:requestId', optionalAuth, getHelpRequest);
 helpRequestsRouter.patch('/:requestId/status', optionalAuth, patchHelpRequestStatus);
 

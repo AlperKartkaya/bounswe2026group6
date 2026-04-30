@@ -12,6 +12,7 @@ const {
   markHelpRequestAsResolvedByRequestId,
   markHelpRequestAsCancelled,
   markHelpRequestAsCancelledByRequestId,
+  listActiveHelpRequestsVisibility,
 } = require('./repository');
 const { tryToAssignRequest, cancelAssignmentByRequestId } = require('../availability/service');
 const { createNotification } = require('../notifications/service');
@@ -269,6 +270,10 @@ async function updateGuestHelpRequestStatus(requestId, nextStatus, guestAccessTo
   return redactGuestRequestDetails(updatedRequest);
 }
 
+async function listActiveHelpRequestsForVisibility(options = {}) {
+  return listActiveHelpRequestsVisibility(options);
+}
+
 module.exports = {
   createMyHelpRequest,
   listMyHelpRequests,
@@ -277,4 +282,5 @@ module.exports = {
   getGuestHelpRequest,
   updateMyHelpRequestStatus,
   updateGuestHelpRequestStatus,
+  listActiveHelpRequestsForVisibility,
 };
