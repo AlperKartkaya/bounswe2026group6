@@ -327,3 +327,80 @@ export async function fetchAdminDeploymentMonitoring(
 
     return response.monitoring;
 }
+
+export type AdminAnnouncement = {
+    id: string;
+    adminId: string;
+    title: string;
+    content: string;
+    createdAt: string;
+};
+
+type AdminAnnouncementsResponse = {
+    announcements: AdminAnnouncement[];
+};
+
+type AdminAnnouncementResponse = {
+    announcement: AdminAnnouncement;
+};
+
+export type AnnouncementMutationPayload = {
+    title: string;
+    content: string;
+};
+
+export async function fetchAdminAnnouncements(token: string, options: { limit?: number } = {}) {
+    const params = new URLSearchParams();
+    if (typeof options.limit === "number") {
+        params.set("limit", String(options.limit));
+    }
+
+    const query = params.toString() ? `?${params.toString()}` : "";
+    const response = await apiRequest<AdminAnnouncementsResponse>(`/admin/announcements${query}`, {
+        token: token.trim(),
+    });
+
+    return response.announcements;
+}
+
+export async function createAdminAnnouncement(token: string, payload: AnnouncementMutationPayload) {
+    const response = await apiRequest<AdminAnnouncementResponse>("/admin/announcements", {
+        method: "POST",
+        token: token.trim(),
+        body: {
+            title: payload.title.trim(),
+            content: payload.content.trim(),
+        },
+    });
+
+    return response.announcement;
+}
+
+export async function updateAdminAnnouncement(
+    token: string,
+    announcementId: string,
+    payload: Partial<AnnouncementMutationPayload>
+) {
+    const body: Record<string, string> = {};
+    if (payload.title !== undefined) {
+        body.title = payload.title.trim();
+    }
+    if (payload.content !== undefined) {
+        body.content = payload.content.trim();
+    }
+
+    const response = await apiRequest<AdminAnnouncementResponse>(`/admin/announcements/${encodeURIComponent(announcementId)}`, {
+        method: "PATCH",
+        token: token.trim(),
+        body,
+    });
+
+    return response.announcement;
+}
+
+export async function deleteAdminAnnouncement(token: string, announcementId: string) {
+    await apiRequest<void>(`/admin/announcements/${encodeURIComponent(announcementId)}`, {
+        method: "DELETE",
+        token: token.trim(),
+    });
+}

@@ -5,11 +5,13 @@ import AdminEmergencyOverviewView from "@/components/feature/admin/AdminEmergenc
 import AdminEmergencyHistoryView from "@/components/feature/admin/AdminEmergencyHistoryView";
 import AdminEmergencyInsightsView from "@/components/feature/admin/AdminEmergencyInsightsView";
 import AdminDeploymentMonitoringView from "@/components/feature/admin/AdminDeploymentMonitoringView";
+import AdminAnnouncementsView from "@/components/feature/admin/AdminAnnouncementsView";
 
-type AdminSectionKey = "overview" | "history" | "insights" | "monitoring";
+type AdminSectionKey = "overview" | "announcements" | "history" | "insights" | "monitoring";
 
 const SECTIONS: Array<{ key: AdminSectionKey; label: string }> = [
     { key: "overview", label: "Emergency Overview" },
+    { key: "announcements", label: "Announcements" },
     { key: "history", label: "Emergency History" },
     { key: "insights", label: "Emergency Insights" },
     { key: "monitoring", label: "Deployment Monitoring" },
@@ -63,6 +65,14 @@ export default function AdminDashboardSwitcher() {
                     aria-labelledby="admin-tab-overview"
                 >
                     <AdminEmergencyOverviewView />
+                </div>
+            ) : activeSection === "announcements" ? (
+                <div
+                    id="admin-panel-announcements"
+                    role="tabpanel"
+                    aria-labelledby="admin-tab-announcements"
+                >
+                    <AdminAnnouncementsView />
                 </div>
             ) : activeSection === "history" ? (
                 <div
