@@ -54,7 +54,9 @@ describe('gathering-areas integration - provider failures', () => {
 
     const timeoutError = new Error('timeout');
     timeoutError.name = 'AbortError';
-    global.fetch.mockRejectedValueOnce(timeoutError);
+    global.fetch
+      .mockRejectedValueOnce(timeoutError)
+      .mockRejectedValueOnce(timeoutError);
 
     const response = await request(app)
       .get('/api/gathering-areas/nearby?lat=41.01&lon=29.01&radius=1500&limit=10');
