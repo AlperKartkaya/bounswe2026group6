@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { SectionCard } from "@/components/ui/display/SectionCard";
 import { SectionHeader } from "@/components/ui/display/SectionHeader";
@@ -68,6 +69,12 @@ export default function NewsPage() {
 
                                     <h2 className="news-item-title">{item.title}</h2>
                                     <p className="news-item-summary">{item.summary}</p>
+                                    <Link
+                                        className="news-read-more-link"
+                                        href={`/news/${encodeURIComponent(item.id)}`}
+                                    >
+                                        {item.hasMore ? "Read full announcement" : "Open announcement"}
+                                    </Link>
                                 </article>
                             ))}
                         </div>

@@ -11,13 +11,19 @@ export type Announcement = {
 export type NewsItem = {
     id: string;
     title: string;
+    content: string;
     summary: string;
+    hasMore: boolean;
     publishedAt: string;
     category: "Announcement";
 };
 
 type AnnouncementsResponse = {
     announcements: Announcement[];
+};
+
+type AnnouncementResponse = {
+    announcement: Announcement;
 };
 
 function buildAnnouncementsPath(options: { limit?: number } = {}) {
@@ -53,10 +59,14 @@ export function summarizeAnnouncementContent(content: string, maxLength = 180) {
 }
 
 export function announcementToNewsItem(announcement: Announcement): NewsItem {
+    const summary = summarizeAnnouncementContent(announcement.content);
+
     return {
         id: announcement.id,
         title: announcement.title,
-        summary: summarizeAnnouncementContent(announcement.content),
+        content: announcement.content,
+        summary,
+        hasMore: summary !== announcement.content.replace(/\s+/g, " ").trim(),
         publishedAt: formatAnnouncementDate(announcement.createdAt),
         category: "Announcement",
     };
@@ -65,4 +75,12 @@ export function announcementToNewsItem(announcement: Announcement): NewsItem {
 export async function fetchAnnouncements(options: { limit?: number } = {}) {
     const response = await apiRequest<AnnouncementsResponse>(buildAnnouncementsPath(options));
     return response.announcements;
+}
+
+export async function fetchAnnouncement(announcementId: string) {
+    const response = await apiRequest<AnnouncementResponse>(
+        `/announcements/${encodeURIComponent(announcementId)}`
+    );
+
+    return response.announcement;
 }
