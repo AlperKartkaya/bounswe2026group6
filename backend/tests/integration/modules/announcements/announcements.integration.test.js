@@ -66,6 +66,10 @@ async function seedAdmin({ userId = 'admin-user', adminId = 'admin-1', email = '
     `,
     [adminId, userId, role],
   );
+  // The production migration seeds demo announcements when the first admin is
+  // created. These tests verify explicit API behavior, so keep each scenario's
+  // announcement set isolated from migration-owned demo rows.
+  await query("DELETE FROM news_announcements WHERE announcement_id LIKE 'seed_announcement_%'");
 
   return {
     adminId,
