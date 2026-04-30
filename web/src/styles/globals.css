@@ -794,14 +794,30 @@ textarea::placeholder {
     isolation: isolate;
 }
 
+.gathering-areas-context-note {
+    margin-top: 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-soft);
+    padding: 10px 12px;
+    display: grid;
+    gap: 4px;
+}
+
+.gathering-areas-context-line {
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--text-secondary);
+}
+
 .gathering-areas-map-note {
     position: absolute;
     top: 12px;
-    left: 12px;
+    right: 120px;
     z-index: 25;
     pointer-events: none;
     margin: 0;
-    max-width: min(440px, calc(100% - 280px));
+    max-width: min(520px, calc(100% - 260px));
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--surface-card) 94%, transparent);
@@ -809,6 +825,7 @@ textarea::placeholder {
     padding: 8px 10px;
     font-size: 0.8rem;
     color: var(--text-secondary);
+    text-align: right;
 }
 
 .gathering-areas-map-retry {
@@ -864,6 +881,108 @@ textarea::placeholder {
 
 .gathering-areas-map-wrap .leaflet-container {
     z-index: 1;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin {
+    background: transparent;
+    border: none;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin-core {
+    display: block;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid #ffffff;
+    position: relative;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+    transform-origin: center bottom;
+    transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin-core::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -10px;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 10px solid currentColor;
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.18));
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin.is-assembly {
+    color: #c73d2a;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin.is-assembly .gathering-areas-pin-core {
+    background: #e35f4f;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin.is-shelter {
+    color: #d08a1f;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin.is-shelter .gathering-areas-pin-core {
+    background: #f3b545;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin.is-other {
+    color: #2b7fc8;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin.is-other .gathering-areas-pin-core {
+    background: #4da2ea;
+}
+
+.gathering-areas-map-wrap .gathering-areas-pin.is-active .gathering-areas-pin-core {
+    transform: scale(1.16);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.26);
+}
+
+.gathering-areas-map-wrap .gathering-areas-live-dot {
+    background: transparent;
+    border: none;
+}
+
+.gathering-areas-map-wrap .gathering-areas-live-dot-core {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: #1ea35c;
+    border: 2px solid #ffffff;
+    display: block;
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(21, 109, 62, 0.35);
+}
+
+.gathering-areas-map-wrap .gathering-areas-live-dot-core::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 999px;
+    border: 2px solid rgba(30, 163, 92, 0.4);
+    animation: gathering-areas-live-pulse 1800ms ease-out infinite;
+}
+
+@keyframes gathering-areas-live-pulse {
+    0% {
+        transform: scale(0.75);
+        opacity: 0.85;
+    }
+
+    70% {
+        transform: scale(1.15);
+        opacity: 0.2;
+    }
+
+    100% {
+        transform: scale(1.2);
+        opacity: 0;
+    }
 }
 
 .gathering-areas-map-wrap .leaflet-top,
@@ -924,7 +1043,8 @@ textarea::placeholder {
     }
 
     .gathering-areas-map-note {
-        max-width: calc(100% - 24px);
+        right: 10px;
+        max-width: calc(100% - 20px);
     }
 }
 
