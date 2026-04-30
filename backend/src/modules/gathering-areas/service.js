@@ -192,6 +192,7 @@ async function fetchNearbyFromOverpass(params) {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
         Accept: 'application/json',
+        'User-Agent': process.env.GATHERING_AREAS_USER_AGENT || 'neph-backend/0.1 gathering-areas-module',
       },
       body: new URLSearchParams({ data: buildOverpassQuery(params) }),
       signal: controller.signal,

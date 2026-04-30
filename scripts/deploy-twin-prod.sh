@@ -27,6 +27,7 @@ git clean -fd -e backend/.env -e web/.env.production -e web/.env.local
 
 cd "$APP_DIR/backend"
 npm ci --omit=dev --no-audit --no-fund
+npm run migrate
 pm2 restart neph-backend --update-env || pm2 start src/server.js --name neph-backend
 
 cd "$APP_DIR/web"

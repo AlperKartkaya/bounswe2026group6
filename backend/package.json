@@ -6,12 +6,9 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch src/server.js",
-<<<<<<< HEAD
-=======
     "migrate": "node scripts/apply-migrations.js",
     "cleanup:notifications": "node scripts/cleanup-notifications.js",
     "start:with-migrations": "npm run migrate && npm start",
->>>>>>> feat/news-announcements
     "start": "node src/server.js",
     "test": "jest --runInBand",
     "test:unit": "jest --selectProjects unit",
