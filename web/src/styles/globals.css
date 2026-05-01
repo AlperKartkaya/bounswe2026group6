@@ -167,7 +167,7 @@ textarea::placeholder {
 .top-navbar {
     position: sticky;
     top: 0;
-    z-index: 30;
+    z-index: 1100;
     border-bottom: 1px solid var(--border-subtle);
     background: color-mix(in srgb, var(--surface-card) 95%, transparent);
     backdrop-filter: blur(8px);
@@ -1026,6 +1026,17 @@ textarea::placeholder {
 .gathering-areas-map-wrap .leaflet-bottom,
 .gathering-areas-map-wrap .leaflet-pane,
 .gathering-areas-map-wrap .leaflet-control {
+    z-index: 10 !important;
+}
+
+.location-picker-wrap .leaflet-container {
+    z-index: 1;
+}
+
+.location-picker-wrap .leaflet-top,
+.location-picker-wrap .leaflet-bottom,
+.location-picker-wrap .leaflet-pane,
+.location-picker-wrap .leaflet-control {
     z-index: 10 !important;
 }
 
