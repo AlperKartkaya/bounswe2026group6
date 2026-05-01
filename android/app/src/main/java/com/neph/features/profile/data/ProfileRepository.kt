@@ -16,6 +16,13 @@ object ProfileRepository {
     private lateinit var prefs: SharedPreferences
     private var cachedProfile = ProfileData()
 
+    internal const val LocationSharingInitializationMessage =
+        "To enable Share Current Location, capture and save a valid location from your profile first."
+
+    class LocationSharingInitializationRequiredException(
+        message: String = LocationSharingInitializationMessage
+    ) : IllegalStateException(message)
+
     fun initialize(context: Context) {
         if (!::prefs.isInitialized) {
             prefs = context.applicationContext.getSharedPreferences(PrefsName, Context.MODE_PRIVATE)
@@ -98,6 +105,10 @@ object ProfileRepository {
         forceClearSharedCoordinates: Boolean = false
     ): ProfileData {
         ensureInitialized()
+
+        if (isFirstTimeShareEnableWithoutCoordinates(cachedProfile, profile, currentDeviceLocation)) {
+            throw LocationSharingInitializationRequiredException()
+        }
 
         try {
             LocationTreeRepository.ensureLocationData()
@@ -211,6 +222,22 @@ object ProfileRepository {
             }
             throw error
         }
+    }
+
+    internal fun isFirstTimeShareEnableWithoutCoordinates(
+        previousProfile: ProfileData,
+        nextProfile: ProfileData,
+        currentDeviceLocation: CurrentDeviceLocation?
+    ): Boolean {
+        val enablingFromDisabledToEnabled = previousProfile.shareLocation != true && nextProfile.shareLocation == true
+        if (!enablingFromDisabledToEnabled) {
+            return false
+        }
+
+        val hasSavedCoordinates = previousProfile.sharedLatitude != null && previousProfile.sharedLongitude != null
+        val hasFreshCurrentCoordinates = currentDeviceLocation != null
+
+        return !hasSavedCoordinates && !hasFreshCurrentCoordinates
     }
 
     suspend fun syncLocationOnLaunch(
