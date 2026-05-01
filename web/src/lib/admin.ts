@@ -404,3 +404,62 @@ export async function deleteAdminAnnouncement(token: string, announcementId: str
         token: token.trim(),
     });
 }
+
+export type AdminUserListItem = {
+    userId: string;
+    username: string | null;
+    email: string;
+    isEmailVerified: boolean;
+    isBanned: boolean;
+    createdAt: string;
+    isAdmin: boolean;
+    adminRole: string | null;
+};
+
+export type AdminUserListFilters = {
+    email: string | null;
+    isEmailVerified: boolean | null;
+    isBanned: boolean | null;
+    limit: number;
+    offset: number;
+};
+
+export type AdminUserListResponse = {
+    users: AdminUserListItem[];
+    total: number;
+    filters: AdminUserListFilters;
+};
+
+export type AdminUserListOptions = {
+    limit?: number;
+    offset?: number;
+    email?: string | null;
+    isEmailVerified?: boolean | null;
+    isBanned?: boolean | null;
+};
+
+export async function fetchAdminUsers(token: string, options: AdminUserListOptions = {}) {
+    const params = new URLSearchParams();
+    if (typeof options.limit === "number") {
+        params.set("limit", String(options.limit));
+    }
+    if (typeof options.offset === "number") {
+        params.set("offset", String(options.offset));
+    }
+    if (options.email && options.email.trim() !== "") {
+        params.set("email", options.email.trim());
+    }
+    if (typeof options.isEmailVerified === "boolean") {
+        params.set("isEmailVerified", String(options.isEmailVerified));
+    }
+    if (typeof options.isBanned === "boolean") {
+        params.set("isBanned", String(options.isBanned));
+    }
+
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return apiRequest<AdminUserListResponse>(`/admin/users${query}`, {
+        token: token.trim(),
+    });
+}
+
+

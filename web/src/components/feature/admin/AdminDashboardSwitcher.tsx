@@ -6,8 +6,15 @@ import AdminEmergencyHistoryView from "@/components/feature/admin/AdminEmergency
 import AdminEmergencyInsightsView from "@/components/feature/admin/AdminEmergencyInsightsView";
 import AdminDeploymentMonitoringView from "@/components/feature/admin/AdminDeploymentMonitoringView";
 import AdminAnnouncementsView from "@/components/feature/admin/AdminAnnouncementsView";
+import AdminUsersView from "@/components/feature/admin/AdminUsersView";
 
-type AdminSectionKey = "overview" | "announcements" | "history" | "insights" | "monitoring";
+type AdminSectionKey =
+    | "overview"
+    | "announcements"
+    | "history"
+    | "insights"
+    | "monitoring"
+    | "users";
 
 const SECTIONS: Array<{ key: AdminSectionKey; label: string }> = [
     { key: "overview", label: "Emergency Overview" },
@@ -15,6 +22,7 @@ const SECTIONS: Array<{ key: AdminSectionKey; label: string }> = [
     { key: "history", label: "Emergency History" },
     { key: "insights", label: "Emergency Insights" },
     { key: "monitoring", label: "Deployment Monitoring" },
+    { key: "users", label: "Users" },
 ];
 
 export default function AdminDashboardSwitcher() {
@@ -90,13 +98,21 @@ export default function AdminDashboardSwitcher() {
                 >
                     <AdminEmergencyInsightsView />
                 </div>
-            ) : (
+            ) : activeSection === "monitoring" ? (
                 <div
                     id="admin-panel-monitoring"
                     role="tabpanel"
                     aria-labelledby="admin-tab-monitoring"
                 >
                     <AdminDeploymentMonitoringView />
+                </div>
+            ) : (
+                <div
+                    id="admin-panel-users"
+                    role="tabpanel"
+                    aria-labelledby="admin-tab-users"
+                >
+                    <AdminUsersView />
                 </div>
             )}
         </div>

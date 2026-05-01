@@ -23,11 +23,88 @@ function parseCsvQuery(value) {
     .filter(Boolean);
 }
 
-async function getAdminUsers(_req, res) {
-  try {
-    const users = await getUsersForAdmin();
+function parseBooleanQuery(value) {
+  if (value === undefined || value === null || value === '') {
+    return { value: null };
+  }
+  const normalized = String(value).toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return { value: true };
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return { value: false };
+  }
+  return { error: true };
+}
 
-    return res.status(200).json({ users });
+async function getAdminUsers(req, res) {
+  try {
+    const limitParam = req.query?.limit;
+    const offsetParam = req.query?.offset;
+    const limit = limitParam === undefined ? 50 : Number(limitParam);
+    const offset = offsetParam === undefined ? 0 : Number(offsetParam);
+
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: '`limit` must be an integer between 1 and 200.',
+      });
+    }
+    if (!Number.isInteger(offset) || offset < 0 || offset > 100000) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: '`offset` must be an integer between 0 and 100000.',
+      });
+    }
+
+    const isEmailVerified = parseBooleanQuery(req.query?.isEmailVerified);
+    if (isEmailVerified.error) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: '`isEmailVerified` must be a boolean value.',
+      });
+    }
+
+    const isBanned = parseBooleanQuery(req.query?.isBanned);
+    if (isBanned.error) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: '`isBanned` must be a boolean value.',
+      });
+    }
+
+    const emailRaw = req.query?.email;
+    let emailContains = null;
+    if (emailRaw !== undefined && emailRaw !== null && String(emailRaw).trim() !== '') {
+      const trimmed = String(emailRaw).trim();
+      if (trimmed.length > 255) {
+        return res.status(400).json({
+          code: 'VALIDATION_ERROR',
+          message: '`email` filter must be at most 255 characters.',
+        });
+      }
+      emailContains = trimmed;
+    }
+
+    const result = await getUsersForAdmin({
+      limit,
+      offset,
+      emailContains,
+      isEmailVerified: isEmailVerified.value,
+      isBanned: isBanned.value,
+    });
+
+    return res.status(200).json({
+      users: result.users,
+      total: result.total,
+      filters: {
+        email: emailContains,
+        isEmailVerified: isEmailVerified.value,
+        isBanned: isBanned.value,
+        limit,
+        offset,
+      },
+    });
   } catch (_error) {
     return res.status(500).json({
       code: 'INTERNAL_ERROR',
