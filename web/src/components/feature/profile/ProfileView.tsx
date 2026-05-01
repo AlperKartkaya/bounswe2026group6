@@ -12,12 +12,16 @@ import { ToggleSwitch } from "@/components/ui/selection/ToggleSwitch";
 import { Checkbox } from "@/components/ui/selection/Checkbox";
 import { PrimaryButton } from "@/components/ui/buttons/PrimaryButton";
 import { HelperText } from "@/components/ui/display/HelperText";
-import { LocationPicker, LocationPickerValue } from "@/components/feature/location";
+import {
+    LocationPicker,
+    LocationPickerValue,
+    StreetAddressInput,
+} from "@/components/feature/location";
 import { bloodTypeOptions } from "@/lib/bloodTypes";
 import { expertiseOptions, professionOptions } from "@/lib/profileOptions";
 import { clearAccessToken, fetchCurrentUser, getAccessToken } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
-import { fetchLocationTree } from "@/lib/location";
+import { fetchLocationTree, searchLocations } from "@/lib/location";
 import {
     findCityKeyByLabel,
     findCountryKeyByLabel,
@@ -25,6 +29,7 @@ import {
     findNeighborhoodValueByLabel,
     LocationTreeByCountry,
     parseLocationAddress,
+    resolvePickerLocation,
 } from "@/lib/locationTree";
 import {
     BackendProfileResponse,
@@ -69,6 +74,25 @@ function isFreshCurrentDeviceSelection(value: LocationPickerValue | null) {
     }
 
     return Date.now() - capturedAtMs <= FRESH_DEVICE_CAPTURE_MAX_AGE_MS;
+}
+
+function toPickerValueFromSearchItem(item: {
+    placeId: string;
+    displayName: string;
+    latitude: number;
+    longitude: number;
+    administrative: LocationPickerValue["administrative"];
+}): LocationPickerValue {
+    return {
+        placeId: item.placeId,
+        displayName: item.displayName,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        source: "dropdown_sync",
+        capturedAt: new Date().toISOString(),
+        accuracyMeters: null,
+        administrative: item.administrative,
+    };
 }
 
 
@@ -120,6 +144,7 @@ export default function ProfileView() {
         React.useState(false);
     const [emptyStateAction, setEmptyStateAction] =
         React.useState<EmptyStateAction>(null);
+    const dropdownSyncRequestIdRef = React.useRef(0);
 
     const refreshProfileFromBackend = React.useCallback(
         async (token: string, activeLocationTree: LocationTreeByCountry) => {
@@ -308,51 +333,141 @@ export default function ProfileView() {
         void loadProfile();
     }, []);
 
-    React.useEffect(() => {
-        if (!locationPickerValue) {
-            return;
-        }
-
-        const countryKey = findCountryKeyByLabel(
-            locationTree,
-            locationPickerValue.administrative.country || ""
-        );
-        const cityKey = findCityKeyByLabel(
-            locationTree,
-            countryKey,
-            locationPickerValue.administrative.city || ""
-        );
-        const districtKey = findDistrictKeyByLabel(
-            locationTree,
-            countryKey,
-            cityKey,
-            locationPickerValue.administrative.district || ""
-        );
-        const neighborhoods =
-            locationTree[countryKey]?.cities[cityKey]?.districts[districtKey]?.neighborhoods ||
-            [];
-        const neighborhoodValue = findNeighborhoodValueByLabel(
-            neighborhoods,
-            locationPickerValue.administrative.neighborhood || ""
-        );
-
-        setProfile((currentProfile) => {
-            if (!currentProfile) {
-                return currentProfile;
+    const applyPickerToProfile = React.useCallback(
+        (picker: LocationPickerValue) => {
+            if (!Object.keys(locationTree).length) {
+                return;
             }
 
-            return {
-                ...currentProfile,
-                country: countryKey || currentProfile.country,
-                city: cityKey || currentProfile.city,
-                district: districtKey || currentProfile.district,
-                neighborhood: neighborhoodValue || currentProfile.neighborhood,
-                extraAddress:
-                    locationPickerValue.administrative.extraAddress ||
-                    currentProfile.extraAddress,
-            };
-        });
-    }, [locationPickerValue, locationTree]);
+            const resolved = resolvePickerLocation(
+                locationTree,
+                picker.administrative,
+                picker.displayName || ""
+            );
+
+            setProfile((currentProfile) => {
+                if (!currentProfile) {
+                    return currentProfile;
+                }
+
+                return {
+                    ...currentProfile,
+                    country: resolved.countryKey || currentProfile.country,
+                    city: resolved.cityKey || currentProfile.city,
+                    district: resolved.districtKey || currentProfile.district,
+                    neighborhood:
+                        resolved.neighborhoodValue || currentProfile.neighborhood,
+                    extraAddress: resolved.extraAddress || currentProfile.extraAddress,
+                };
+            });
+        },
+        [locationTree]
+    );
+
+    const handleLocationPickerChange = React.useCallback(
+        (next: LocationPickerValue | null) => {
+            setLocationPickerValue(next);
+
+            if (!next) {
+                return;
+            }
+
+            applyPickerToProfile(next);
+        },
+        [applyPickerToProfile]
+    );
+
+    const syncPickerFromProfile = React.useCallback(
+        (nextProfile: ProfileData) => {
+            const countryKey = findCountryKeyByLabel(locationTree, nextProfile.country);
+            const cityKey = findCityKeyByLabel(
+                locationTree,
+                countryKey,
+                nextProfile.city
+            );
+
+            if (!countryKey || !cityKey) {
+                return;
+            }
+
+            const selectedCountry = locationTree[countryKey];
+            const selectedCity = selectedCountry?.cities[cityKey];
+
+            if (!selectedCountry || !selectedCity) {
+                return;
+            }
+
+            const districtKey = findDistrictKeyByLabel(
+                locationTree,
+                countryKey,
+                cityKey,
+                nextProfile.district
+            );
+            const selectedDistrict = districtKey
+                ? selectedCity.districts[districtKey]
+                : undefined;
+            const selectedNeighborhood =
+                nextProfile.neighborhood && selectedDistrict
+                    ? selectedDistrict.neighborhoods.find(
+                        (item) => item.value === nextProfile.neighborhood
+                    )
+                    : undefined;
+
+            const query = [
+                selectedNeighborhood?.label,
+                selectedDistrict?.label,
+                selectedCity.label,
+                selectedCountry.label,
+            ]
+                .filter(Boolean)
+                .join(", ");
+
+            if (!query) {
+                return;
+            }
+
+            const currentRequestId = ++dropdownSyncRequestIdRef.current;
+
+            void (async () => {
+                try {
+                    const response = await searchLocations({
+                        q: query,
+                        countryCode: countryKey.toUpperCase() || "TR",
+                        limit: 1,
+                    });
+
+                    if (currentRequestId !== dropdownSyncRequestIdRef.current) {
+                        return;
+                    }
+
+                    const first = response.items[0];
+                    if (!first) {
+                        return;
+                    }
+
+                    setLocationPickerValue(toPickerValueFromSearchItem(first));
+                } catch {
+                    // Keep current picker; dropdown selection still wins on save.
+                }
+            })();
+        },
+        [locationTree]
+    );
+
+    const updateLocationField = React.useCallback(
+        (patch: Partial<ProfileData>) => {
+            setProfile((currentProfile) => {
+                if (!currentProfile) {
+                    return currentProfile;
+                }
+
+                const nextProfile = { ...currentProfile, ...patch };
+                syncPickerFromProfile(nextProfile);
+                return nextProfile;
+            });
+        },
+        [syncPickerFromProfile]
+    );
 
     const handleSave = async () => {
         if (!profile) {
@@ -992,7 +1107,7 @@ export default function ProfileView() {
                     <div className="mb-4">
                         <LocationPicker
                             value={locationPickerValue}
-                            onChange={setLocationPickerValue}
+                            onChange={handleLocationPickerChange}
                             label="Select location from map or search"
                         />
                     </div>
@@ -1004,17 +1119,12 @@ export default function ProfileView() {
                             value={resolvedCountryKey}
                             options={[{ label: "Select Country", value: "" }, ...countryOptions]}
                             onChange={(e) =>
-                                setProfile((currentProfile) =>
-                                    currentProfile
-                                        ? {
-                                            ...currentProfile,
-                                            country: e.target.value,
-                                            city: "",
-                                            district: "",
-                                            neighborhood: "",
-                                        }
-                                        : currentProfile
-                                )
+                                updateLocationField({
+                                    country: e.target.value,
+                                    city: "",
+                                    district: "",
+                                    neighborhood: "",
+                                })
                             }
                         />
 
@@ -1025,16 +1135,11 @@ export default function ProfileView() {
                             disabled={!resolvedCountryKey}
                             options={[{ label: "Select City", value: "" }, ...cityOptions]}
                             onChange={(e) =>
-                                setProfile((currentProfile) =>
-                                    currentProfile
-                                        ? {
-                                            ...currentProfile,
-                                            city: e.target.value,
-                                            district: "",
-                                            neighborhood: "",
-                                        }
-                                        : currentProfile
-                                )
+                                updateLocationField({
+                                    city: e.target.value,
+                                    district: "",
+                                    neighborhood: "",
+                                })
                             }
                         />
 
@@ -1048,15 +1153,10 @@ export default function ProfileView() {
                                 ...districtOptions,
                             ]}
                             onChange={(e) =>
-                                setProfile((currentProfile) =>
-                                    currentProfile
-                                        ? {
-                                            ...currentProfile,
-                                            district: e.target.value,
-                                            neighborhood: "",
-                                        }
-                                        : currentProfile
-                                )
+                                updateLocationField({
+                                    district: e.target.value,
+                                    neighborhood: "",
+                                })
                             }
                         />
 
@@ -1070,36 +1170,51 @@ export default function ProfileView() {
                                 ...neighborhoodOptions,
                             ]}
                             onChange={(e) =>
-                                setProfile((currentProfile) =>
-                                    currentProfile
-                                        ? {
-                                            ...currentProfile,
-                                            neighborhood: e.target.value,
-                                        }
-                                        : currentProfile
-                                )
+                                updateLocationField({
+                                    neighborhood: e.target.value,
+                                })
                             }
                         />
 
                         <div className="col-span-2">
-                            <TextInput
+                            <StreetAddressInput
                                 id="extraAddress"
                                 label="Extra Address"
+                                placeholder="Start typing a street name"
                                 value={profile.extraAddress}
-                                onChange={(e) =>
+                                countryCode={(resolvedCountryKey || "TR").toUpperCase()}
+                                scope={{
+                                    country: countryData?.label,
+                                    city: countryData?.cities[resolvedCityKey]?.label,
+                                    district:
+                                        countryData?.cities[resolvedCityKey]?.districts[
+                                            resolvedDistrictKey
+                                        ]?.label,
+                                    neighborhood: neighborhoodOptions.find(
+                                        (item) =>
+                                            item.value === resolvedNeighborhoodValue
+                                    )?.label,
+                                }}
+                                onChange={(next) =>
                                     setProfile((currentProfile) =>
                                         currentProfile
                                             ? {
                                                 ...currentProfile,
-                                                extraAddress: e.target.value,
+                                                extraAddress: next,
                                             }
                                             : currentProfile
                                     )
                                 }
+                                onSelectSuggestion={(item) => {
+                                    setLocationPickerValue(
+                                        toPickerValueFromSearchItem(item)
+                                    );
+                                }}
                             />
                             <HelperText>
-                                District and neighborhood are sent with their labels and
-                                merged into the backend address field for compatibility.
+                                Pick a spot on the map or start typing a street to see
+                                suggestions in your selected area. Selecting a
+                                suggestion moves the map pin.
                             </HelperText>
                             {locationTreeError ? (
                                 <HelperText className="text-red-500">

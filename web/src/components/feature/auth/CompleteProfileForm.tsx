@@ -10,18 +10,19 @@ import { Checkbox } from "@/components/ui/selection/Checkbox";
 import { ProfileInfoRow } from "../../ui/display/ProfileInfoRow";
 import { SaveActionBar } from "../../ui/display/SaveActionBar";
 import { HelperText } from "@/components/ui/display/HelperText";
-import { LocationPicker, LocationPickerValue } from "@/components/feature/location";
+import {
+    LocationPicker,
+    LocationPickerValue,
+    StreetAddressInput,
+} from "@/components/feature/location";
 import { bloodTypeOptions } from "@/lib/bloodTypes";
 import { countryCodeOptions } from "@/lib/countryCodes";
 import { expertiseOptions, professionOptions } from "@/lib/profileOptions";
 import { getAccessToken, SIGNUP_DRAFT_KEY } from "@/lib/auth";
-import { fetchLocationTree } from "@/lib/location";
+import { fetchLocationTree, searchLocations } from "@/lib/location";
 import {
-    findCityKeyByLabel,
-    findCountryKeyByLabel,
-    findDistrictKeyByLabel,
-    findNeighborhoodValueByLabel,
     LocationTreeByCountry,
+    resolvePickerLocation,
 } from "@/lib/locationTree";
 import {
     buildAddress,
@@ -96,6 +97,25 @@ function isFreshCurrentDeviceSelection(value: LocationPickerValue | null) {
     return Date.now() - capturedAtMs <= FRESH_DEVICE_CAPTURE_MAX_AGE_MS;
 }
 
+function toPickerValueFromSearchItem(item: {
+    placeId: string;
+    displayName: string;
+    latitude: number;
+    longitude: number;
+    administrative: LocationPickerValue["administrative"];
+}): LocationPickerValue {
+    return {
+        placeId: item.placeId,
+        displayName: item.displayName,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        source: "dropdown_sync",
+        capturedAt: new Date().toISOString(),
+        accuracyMeters: null,
+        administrative: item.administrative,
+    };
+}
+
 export default function CompleteProfileForm() {
     const router = useRouter();
     const [form, setForm] = React.useState<ProfileForm>(initialForm);
@@ -105,6 +125,7 @@ export default function CompleteProfileForm() {
     const [locationTreeError, setLocationTreeError] = React.useState("");
     const [locationPickerValue, setLocationPickerValue] =
         React.useState<LocationPickerValue | null>(null);
+    const dropdownSyncRequestIdRef = React.useRef(0);
 
     React.useEffect(() => {
         const savedDraft = sessionStorage.getItem(SIGNUP_DRAFT_KEY);
@@ -160,44 +181,117 @@ export default function CompleteProfileForm() {
         };
     }, []);
 
-    React.useEffect(() => {
-        if (!locationPickerValue) {
-            return;
-        }
+    const applyPickerToForm = React.useCallback(
+        (picker: LocationPickerValue) => {
+            if (!Object.keys(locationTree).length) {
+                return;
+            }
 
-        const countryKey = findCountryKeyByLabel(
-            locationTree,
-            locationPickerValue.administrative.country || ""
-        );
-        const cityKey = findCityKeyByLabel(
-            locationTree,
-            countryKey,
-            locationPickerValue.administrative.city || ""
-        );
-        const districtKey = findDistrictKeyByLabel(
-            locationTree,
-            countryKey,
-            cityKey,
-            locationPickerValue.administrative.district || ""
-        );
-        const neighborhoods =
-            locationTree[countryKey]?.cities[cityKey]?.districts[districtKey]?.neighborhoods ||
-            [];
-        const neighborhoodValue = findNeighborhoodValueByLabel(
-            neighborhoods,
-            locationPickerValue.administrative.neighborhood || ""
-        );
+            const resolved = resolvePickerLocation(
+                locationTree,
+                picker.administrative,
+                picker.displayName || ""
+            );
 
-        setForm((currentForm) => ({
-            ...currentForm,
-            country: countryKey || currentForm.country,
-            city: cityKey || currentForm.city,
-            district: districtKey || currentForm.district,
-            neighborhood: neighborhoodValue || currentForm.neighborhood,
-            extraAddress:
-                locationPickerValue.administrative.extraAddress || currentForm.extraAddress,
-        }));
-    }, [locationPickerValue, locationTree]);
+            setForm((currentForm) => ({
+                ...currentForm,
+                country: resolved.countryKey || currentForm.country,
+                city: resolved.cityKey || currentForm.city,
+                district: resolved.districtKey || currentForm.district,
+                neighborhood: resolved.neighborhoodValue || currentForm.neighborhood,
+                extraAddress: resolved.extraAddress || currentForm.extraAddress,
+            }));
+        },
+        [locationTree]
+    );
+
+    const handleLocationPickerChange = React.useCallback(
+        (next: LocationPickerValue | null) => {
+            setLocationPickerValue(next);
+
+            if (!next) {
+                return;
+            }
+
+            applyPickerToForm(next);
+        },
+        [applyPickerToForm]
+    );
+
+    const syncPickerFromDropdowns = React.useCallback(
+        (nextForm: ProfileForm) => {
+            if (!nextForm.country || !nextForm.city) {
+                return;
+            }
+
+            const country = locationTree[nextForm.country];
+            const city = country?.cities[nextForm.city];
+
+            if (!country || !city) {
+                return;
+            }
+
+            const district = nextForm.district
+                ? city.districts[nextForm.district]
+                : undefined;
+            const neighborhood =
+                nextForm.neighborhood && district
+                    ? district.neighborhoods.find(
+                        (item) => item.value === nextForm.neighborhood
+                    )
+                    : undefined;
+
+            const query = [
+                neighborhood?.label,
+                district?.label,
+                city.label,
+                country.label,
+            ]
+                .filter(Boolean)
+                .join(", ");
+
+            if (!query) {
+                return;
+            }
+
+            const currentRequestId = ++dropdownSyncRequestIdRef.current;
+
+            void (async () => {
+                try {
+                    const response = await searchLocations({
+                        q: query,
+                        countryCode: nextForm.country.toUpperCase() || "TR",
+                        limit: 1,
+                    });
+
+                    if (currentRequestId !== dropdownSyncRequestIdRef.current) {
+                        return;
+                    }
+
+                    const first = response.items[0];
+                    if (!first) {
+                        return;
+                    }
+
+                    setLocationPickerValue(toPickerValueFromSearchItem(first));
+                } catch {
+                    // Keep current picker; dropdown selection still wins on save.
+                }
+            })();
+        },
+        [locationTree]
+    );
+
+    const updateLocationField = React.useCallback(
+        (patch: Partial<ProfileForm>) => {
+            setForm((currentForm) => {
+                const nextForm = { ...currentForm, ...patch };
+                syncPickerFromDropdowns(nextForm);
+                return nextForm;
+            });
+        },
+        [syncPickerFromDropdowns]
+    );
 
     const countryData = form.country ? locationTree[form.country] : undefined;
 
@@ -579,7 +673,7 @@ export default function CompleteProfileForm() {
             <ProfileInfoRow label="Address">
                 <LocationPicker
                     value={locationPickerValue}
-                    onChange={setLocationPickerValue}
+                    onChange={handleLocationPickerChange}
                     label="Select location from map or search"
                 />
 
@@ -588,8 +682,7 @@ export default function CompleteProfileForm() {
                     options={[{ label: "Select Country", value: "" }, ...countryOptions]}
                     value={form.country}
                     onChange={(e) =>
-                        setForm({
-                            ...form,
+                        updateLocationField({
                             country: e.target.value,
                             city: "",
                             district: "",
@@ -603,8 +696,7 @@ export default function CompleteProfileForm() {
                     options={[{ label: "Select City", value: "" }, ...cityOptions]}
                     value={form.city}
                     onChange={(e) =>
-                        setForm({
-                            ...form,
+                        updateLocationField({
                             city: e.target.value,
                             district: "",
                             neighborhood: "",
@@ -617,8 +709,7 @@ export default function CompleteProfileForm() {
                     options={[{ label: "Select District", value: "" }, ...districtOptions]}
                     value={form.district}
                     onChange={(e) =>
-                        setForm({
-                            ...form,
+                        updateLocationField({
                             district: e.target.value,
                             neighborhood: "",
                         })
@@ -633,27 +724,41 @@ export default function CompleteProfileForm() {
                     ]}
                     value={form.neighborhood}
                     onChange={(e) =>
-                        setForm({
-                            ...form,
+                        updateLocationField({
                             neighborhood: e.target.value,
                         })
                     }
                 />
 
-                <TextInput
+                <StreetAddressInput
                     id="extraAddress"
-                    placeholder="Street, building, etc. (optional)"
+                    label="Extra Address"
+                    placeholder="Start typing a street name"
                     value={form.extraAddress}
-                    onChange={(e) =>
-                        setForm({
-                            ...form,
-                            extraAddress: e.target.value,
-                        })
+                    countryCode={(form.country || "TR").toUpperCase()}
+                    scope={{
+                        country: countryData?.label,
+                        city: countryData?.cities[form.city]?.label,
+                        district:
+                            countryData?.cities[form.city]?.districts[form.district]
+                                ?.label,
+                        neighborhood: neighborhoodOptions.find(
+                            (item) => item.value === form.neighborhood
+                        )?.label,
+                    }}
+                    onChange={(next) =>
+                        setForm((currentForm) => ({
+                            ...currentForm,
+                            extraAddress: next,
+                        }))
                     }
+                    onSelectSuggestion={(item) => {
+                        setLocationPickerValue(toPickerValueFromSearchItem(item));
+                    }}
                 />
                 <HelperText>
-                    District and neighborhood are sent with their labels and merged into
-                    the backend address field for compatibility.
+                    Pick a spot on the map or start typing a street to see suggestions
+                    in your selected area. Selecting a suggestion moves the map pin.
                 </HelperText>
                 {locationTreeError ? (
                     <HelperText className="text-red-500">{locationTreeError}</HelperText>
