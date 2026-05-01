@@ -304,6 +304,44 @@ async function cancelAssignmentByRequestId(requestId) {
   }
 }
 
+async function cancelAssignmentsForBannedVolunteer(userId) {
+  const volunteer = await findVolunteerByUserId(userId);
+
+  if (!volunteer) {
+    return {
+      volunteerId: null,
+      cancelledAssignmentId: null,
+      affectedRequestId: null,
+    };
+  }
+
+  const activeAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
+
+  if (activeAssignment) {
+    await notifyVolunteerTaskUpdated(userId, activeAssignment.request_id, null, 'volunteer_banned');
+    await cancelAssignment(activeAssignment.assignment_id);
+    await syncRequestStatusFromAssignments(activeAssignment.request_id);
+  }
+
+  await updateVolunteerAvailability(
+    volunteer.volunteer_id,
+    false,
+    volunteer.last_known_latitude,
+    volunteer.last_known_longitude,
+  );
+  await createAvailabilityRecord(volunteer.volunteer_id, false, false);
+
+  if (activeAssignment) {
+    await runAssignmentCycle();
+  }
+
+  return {
+    volunteerId: volunteer.volunteer_id,
+    cancelledAssignmentId: activeAssignment ? activeAssignment.assignment_id : null,
+    affectedRequestId: activeAssignment ? activeAssignment.request_id : null,
+  };
+}
+
 async function resolveMyAssignment(userId, { requestId }) {
   const volunteer = await findVolunteerByUserId(userId);
   if (!volunteer) {
@@ -398,4 +436,5 @@ module.exports = {
   getAvailabilityStatus,
   tryToAssignRequest,
   cancelAssignmentByRequestId,
+  cancelAssignmentsForBannedVolunteer,
 };

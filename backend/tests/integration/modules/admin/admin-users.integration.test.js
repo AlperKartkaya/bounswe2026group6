@@ -67,6 +67,54 @@ async function seedUsers() {
   );
 }
 
+async function seedHelpRequest({ requestId, userId, status = 'PENDING', createdAt = null }) {
+  await query(
+    `
+      INSERT INTO help_requests (
+        request_id,
+        user_id,
+        help_types,
+        affected_people_count,
+        need_type,
+        description,
+        status,
+        contact_full_name,
+        contact_phone,
+        created_at
+      )
+      VALUES ($1, $2, ARRAY['general'], 1, 'general', 'Need help', $3::request_status, 'Test User', 5550000000, COALESCE($4::timestamp, CURRENT_TIMESTAMP))
+    `,
+    [requestId, userId, status, createdAt],
+  );
+}
+
+async function seedVolunteer({ volunteerId, userId, isAvailable = true }) {
+  await query(
+    `
+      INSERT INTO volunteers (
+        volunteer_id,
+        user_id,
+        is_available,
+        last_known_latitude,
+        last_known_longitude,
+        location_updated_at
+      )
+      VALUES ($1, $2, $3, NULL, NULL, CURRENT_TIMESTAMP)
+    `,
+    [volunteerId, userId, isAvailable],
+  );
+}
+
+async function seedAssignment({ assignmentId, volunteerId, requestId }) {
+  await query(
+    `
+      INSERT INTO assignments (assignment_id, volunteer_id, request_id, assigned_at, is_cancelled)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP, FALSE)
+    `,
+    [assignmentId, volunteerId, requestId],
+  );
+}
+
 beforeEach(async () => {
   await query(`
     TRUNCATE TABLE
@@ -362,6 +410,117 @@ describe('PATCH /api/admin/users/:userId/ban and /unban', () => {
         banReason: null,
       }),
     );
+  });
+
+  test('ban endpoint cancels open requester requests and clears their active assignments', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    await seedHelpRequest({
+      requestId: 'req_alice_pending',
+      userId: 'user_alice',
+      status: 'PENDING',
+      createdAt: '2026-05-01T08:00:00.000Z',
+    });
+    await seedHelpRequest({
+      requestId: 'req_alice_assigned',
+      userId: 'user_alice',
+      status: 'ASSIGNED',
+      createdAt: '2026-05-01T09:00:00.000Z',
+    });
+    await seedVolunteer({ volunteerId: 'vol_bob', userId: 'user_bob', isAvailable: true });
+    await seedAssignment({
+      assignmentId: 'asg_bob_req_alice_assigned',
+      volunteerId: 'vol_bob',
+      requestId: 'req_alice_assigned',
+    });
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_alice/ban')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Policy violation' });
+
+    expect(response.status).toBe(200);
+
+    const requestRows = await query(
+      `
+        SELECT request_id, status, cancelled_at
+        FROM help_requests
+        WHERE request_id IN ('req_alice_pending', 'req_alice_assigned')
+        ORDER BY request_id ASC
+      `,
+    );
+
+    expect(requestRows.rows).toEqual([
+      expect.objectContaining({ request_id: 'req_alice_assigned', status: 'CANCELLED' }),
+      expect.objectContaining({ request_id: 'req_alice_pending', status: 'CANCELLED' }),
+    ]);
+    requestRows.rows.forEach((row) => {
+      expect(row.cancelled_at).toBeTruthy();
+    });
+
+    const assignmentRows = await query(
+      `
+        SELECT assignment_id
+        FROM assignments
+        WHERE request_id IN ('req_alice_pending', 'req_alice_assigned')
+          AND is_cancelled = FALSE
+      `,
+    );
+    expect(assignmentRows.rows).toHaveLength(0);
+  });
+
+  test('ban endpoint cancels active volunteer assignment and marks volunteer unavailable', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    await seedHelpRequest({
+      requestId: 'req_for_banned_volunteer',
+      userId: 'user_bob',
+      status: 'ASSIGNED',
+    });
+    await seedVolunteer({ volunteerId: 'vol_alice', userId: 'user_alice', isAvailable: true });
+    await seedAssignment({
+      assignmentId: 'asg_alice_req_for_banned',
+      volunteerId: 'vol_alice',
+      requestId: 'req_for_banned_volunteer',
+    });
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_alice/ban')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Abuse' });
+
+    expect(response.status).toBe(200);
+
+    const removedAssignment = await query(
+      `
+        SELECT assignment_id
+        FROM assignments
+        WHERE assignment_id = 'asg_alice_req_for_banned'
+      `,
+    );
+    expect(removedAssignment.rows).toHaveLength(0);
+
+    const volunteerResult = await query(
+      `
+        SELECT is_available
+        FROM volunteers
+        WHERE volunteer_id = 'vol_alice'
+      `,
+    );
+    expect(volunteerResult.rows[0].is_available).toBe(false);
+
+    const requestStatus = await query(
+      `
+        SELECT status
+        FROM help_requests
+        WHERE request_id = 'req_for_banned_volunteer'
+      `,
+    );
+    expect(requestStatus.rows[0].status).toBe('PENDING');
   });
 
   test('unban endpoint clears ban fields and restores active state', async () => {

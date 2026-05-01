@@ -10,6 +10,16 @@ const {
   getEmergencyAnalytics,
   getDeploymentMonitoring,
 } = require('./repository');
+const {
+  listHelpRequestsByUserId,
+  markHelpRequestAsCancelled,
+} = require('../help-requests/repository');
+const {
+  cancelAssignmentByRequestId,
+  cancelAssignmentsForBannedVolunteer,
+} = require('../availability/service');
+
+const OPEN_REQUEST_STATUSES = new Set(['PENDING', 'ASSIGNED', 'IN_PROGRESS']);
 
 async function getUsersForAdmin(options = {}) {
   const { users, total } = await listUsers(options);
@@ -41,7 +51,15 @@ function mapAdminUserRow(row) {
 
 async function banUserForAdmin({ userId, reason = null }) {
   const updated = await banUserById(userId, reason);
-  return updated ? mapAdminUserRow(updated) : null;
+
+  if (!updated) {
+    return null;
+  }
+
+  await cancelOpenRequestsForBannedRequester(userId);
+  await cancelAssignmentsForBannedVolunteer(userId);
+
+  return mapAdminUserRow(updated);
 }
 
 async function unbanUserForAdmin({ userId }) {
@@ -75,6 +93,16 @@ async function getEmergencyAnalyticsForAdmin(options = {}) {
 
 async function getDeploymentMonitoringForAdmin(options = {}) {
   return getDeploymentMonitoring(options);
+}
+
+async function cancelOpenRequestsForBannedRequester(userId) {
+  const requesterRequests = await listHelpRequestsByUserId(userId);
+  const openRequests = requesterRequests.filter((request) => OPEN_REQUEST_STATUSES.has(request.internalStatus));
+
+  for (const request of openRequests) {
+    await markHelpRequestAsCancelled(userId, request.id);
+    await cancelAssignmentByRequestId(request.id);
+  }
 }
 
 module.exports = {
