@@ -159,6 +159,7 @@ test('admin can ban and unban user, and user access is restored after unban', as
 
   await page.goto('/login');
   await loginThroughUi(page, { email: adminEmail, password });
+  await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible({ timeout: 20_000 });
   await page.goto('/admin');
   await openUsersTab(page);
 
@@ -188,6 +189,7 @@ test('admin can ban and unban user, and user access is restored after unban', as
 
   await page.goto('/login');
   await loginThroughUi(page, { email: adminEmail, password });
+  await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible({ timeout: 20_000 });
   await page.goto('/admin');
   await openUsersTab(page);
 
