@@ -6,10 +6,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 
 enum class CrisisRequestType {
     SHELTER,
@@ -163,15 +162,31 @@ object ActiveHelpRequestsRepository {
     }
 
     fun formatOpenedAt(createdAt: String): String {
-        val parsed = runCatching { Instant.parse(createdAt) }.getOrNull() ?: return createdAt
-        return DateTimeFormatter
-            .ofPattern("MMM d, yyyy, HH:mm", Locale.US)
-            .withZone(ZoneId.systemDefault())
-            .format(parsed)
+        val parsed = runCatching {
+            IsoDateFormat.get().parse(createdAt)
+        }.getOrNull() ?: return createdAt
+
+        return DisplayDateFormat.get().format(parsed)
     }
 
     private fun urlEncode(value: String): String {
         return URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
+    }
+
+    private val IsoDateFormat = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat {
+            return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+        }
+    }
+
+    private val DisplayDateFormat = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat {
+            return SimpleDateFormat("MMM d, yyyy, HH:mm", Locale.US).apply {
+                timeZone = TimeZone.getDefault()
+            }
+        }
     }
 }
 
