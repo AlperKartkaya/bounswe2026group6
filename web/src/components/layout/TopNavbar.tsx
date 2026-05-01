@@ -13,13 +13,14 @@ const navItemsOrdered = [
     { label: "News", href: "/news" },
     { label: "Notifications", href: "/notifications" },
     { label: "Emergency Numbers", href: "/emergency-numbers" },
+    { label: "Help Request Map", href: "/crisis-map" },
     { label: "Gathering Areas", href: "/gathering-areas" },
     { label: "Admin", href: "/admin", requiresAdmin: true },
     { label: "Profile", href: "/profile" },
     { label: "Privacy & Security", href: "/privacy-security" },
 ];
 
-const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers", "/gathering-areas"]);
+const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers", "/crisis-map", "/gathering-areas"]);
 
 export function TopNavbar() {
     const router = useRouter();
