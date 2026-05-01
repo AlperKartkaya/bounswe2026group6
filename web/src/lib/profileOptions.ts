@@ -8,8 +8,4 @@ export const professionOptions = [
 
 export const expertiseOptions = [
     "First Aid",
-    "Driving",
-    "Search & Rescue",
-    "Cooking",
-    "Logistics",
 ];

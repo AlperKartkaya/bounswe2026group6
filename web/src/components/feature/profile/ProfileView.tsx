@@ -455,7 +455,9 @@ export default function ProfileView() {
             return;
         }
 
-        const expertiseAreas = profile.expertise;
+        const expertiseAreas = profile.expertise.filter((area) =>
+            expertiseOptions.includes(area)
+        );
         const expertiseValidationError = validateExpertiseAreas(expertiseAreas);
 
         if (expertiseValidationError) {

@@ -373,7 +373,9 @@ export default function CompleteProfileForm() {
             return;
         }
 
-        const expertiseAreas = form.expertise;
+        const expertiseAreas = form.expertise.filter((area) =>
+            expertiseOptions.includes(area)
+        );
         const expertiseValidationError = validateExpertiseAreas(expertiseAreas);
 
         if (expertiseValidationError) {

@@ -118,7 +118,8 @@ object ProfileRepository {
             lastName = lastName,
             fullName = composeFullName(firstName, lastName),
             dateOfBirth = normalizedDateOfBirth,
-            age = resolvedAge
+            age = resolvedAge,
+            expertise = normalizeExpertise(profile.expertise)
         )
 
         return try {
@@ -332,6 +333,7 @@ object ProfileRepository {
         val resolvedLastName = profile.lastName?.trim()?.takeIf(String::isNotBlank)
         val resolvedDateOfBirth = normalizeDateOfBirth(profile.dateOfBirth)
         val resolvedAge = profile.age ?: calculateAgeFromDateOfBirth(resolvedDateOfBirth)
+        val resolvedExpertise = normalizeExpertise(profile.expertise)
         val resolvedFullName = composeFullName(resolvedFirstName, resolvedLastName) ?: profile.fullName
 
         prefs.edit().apply {
@@ -341,7 +343,7 @@ object ProfileRepository {
             putString("email", profile.email)
             putString("phone", profile.phone)
             putString("profession", profile.profession)
-            putString("expertise", JSONArray(profile.expertise).toString())
+            putString("expertise", JSONArray(resolvedExpertise).toString())
             putFloatOrRemove("height", profile.height)
             putFloatOrRemove("weight", profile.weight)
             putString("bloodType", profile.bloodType)
@@ -368,7 +370,7 @@ object ProfileRepository {
             emptyList()
         } else {
             try {
-                JSONArray(expertiseJson).toStringList()
+                normalizeExpertise(JSONArray(expertiseJson).toStringList())
             } catch (_: Exception) {
                 emptyList()
             }
@@ -465,7 +467,7 @@ object ProfileRepository {
             email = email.takeIf { it.isNotBlank() } ?: cachedProfileSnapshot.email,
             phone = profile.optStringOrNull("phoneNumber"),
             profession = expertise?.optStringOrNull("profession"),
-            expertise = expertise?.optJSONArray("expertiseAreas").toStringList(),
+            expertise = normalizeExpertise(expertise?.optJSONArray("expertiseAreas").toStringList()),
             height = physicalInfo.optNullableFloat("height"),
             weight = physicalInfo.optNullableFloat("weight"),
             bloodType = normalizeBloodType(healthInfo.optStringOrNull("bloodType")),

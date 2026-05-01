@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api";
 import { countryCodeOptions } from "@/lib/countryCodes";
+import { expertiseOptions } from "@/lib/profileOptions";
 
 export type BackendProfileResponse = {
     profile: {
@@ -203,7 +204,12 @@ export function mapBackendProfileToEditableProfile(
         phone: phoneParts.phone,
         countryCode: phoneParts.countryCode,
         profession: normalizedProfession,
-        expertise: expertise?.expertiseAreas || [],
+        expertise: (expertise?.expertiseAreas || [])
+            .map((area) => area.trim())
+            .filter((area) =>
+                expertiseOptions.some((allowed) => allowed.toLocaleLowerCase() === area.toLocaleLowerCase())
+            )
+            .map(() => expertiseOptions[0]),
         height:
             profile.physicalInfo.height !== null && profile.physicalInfo.height !== undefined
                 ? String(profile.physicalInfo.height)
