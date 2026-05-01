@@ -1,5 +1,7 @@
 const {
   listUsers,
+  banUserById,
+  unbanUserById,
   listHelpRequests,
   listAnnouncements,
   getBasicStats,
@@ -12,24 +14,39 @@ const {
 async function getUsersForAdmin(options = {}) {
   const { users, total } = await listUsers(options);
 
-  const items = users.map((row) => {
-    const firstName = row.first_name ? String(row.first_name).trim() : '';
-    const lastName = row.last_name ? String(row.last_name).trim() : '';
-    const username = [firstName, lastName].filter(Boolean).join(' ');
+  return {
+    users: users.map((row) => mapAdminUserRow(row)),
+    total,
+  };
+}
 
-    return {
-      userId: row.user_id,
-      username: username || null,
-      email: row.email,
-      isEmailVerified: Boolean(row.is_email_verified),
-      isBanned: Boolean(row.is_banned),
-      createdAt: row.created_at,
-      isAdmin: Boolean(row.admin_id),
-      adminRole: row.admin_role || null,
-    };
-  });
+function mapAdminUserRow(row) {
+  const firstName = row.first_name ? String(row.first_name).trim() : '';
+  const lastName = row.last_name ? String(row.last_name).trim() : '';
+  const username = [firstName, lastName].filter(Boolean).join(' ');
 
-  return { users: items, total };
+  return {
+    userId: row.user_id,
+    username: username || null,
+    email: row.email,
+    isEmailVerified: Boolean(row.is_email_verified),
+    isBanned: Boolean(row.is_banned),
+    banReason: row.ban_reason || null,
+    bannedAt: row.banned_at || null,
+    createdAt: row.created_at,
+    isAdmin: Boolean(row.admin_id),
+    adminRole: row.admin_role || null,
+  };
+}
+
+async function banUserForAdmin({ userId, reason = null }) {
+  const updated = await banUserById(userId, reason);
+  return updated ? mapAdminUserRow(updated) : null;
+}
+
+async function unbanUserForAdmin({ userId }) {
+  const updated = await unbanUserById(userId);
+  return updated ? mapAdminUserRow(updated) : null;
 }
 
 async function getHelpRequestsForAdmin() {
@@ -62,6 +79,8 @@ async function getDeploymentMonitoringForAdmin(options = {}) {
 
 module.exports = {
   getUsersForAdmin,
+  banUserForAdmin,
+  unbanUserForAdmin,
   getHelpRequestsForAdmin,
   getAnnouncementsForAdmin,
   getStatsForAdmin,

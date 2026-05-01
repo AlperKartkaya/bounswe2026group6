@@ -1,5 +1,7 @@
 const {
   getUsersForAdmin,
+  banUserForAdmin,
+  unbanUserForAdmin,
   getHelpRequestsForAdmin,
   getAnnouncementsForAdmin,
   getStatsForAdmin,
@@ -35,6 +37,23 @@ function parseBooleanQuery(value) {
     return { value: false };
   }
   return { error: true };
+}
+
+function parseOptionalReason(rawReason) {
+  if (rawReason === undefined || rawReason === null) {
+    return { value: null };
+  }
+
+  if (typeof rawReason !== 'string') {
+    return { error: '`reason` must be a string when provided.' };
+  }
+
+  const trimmed = rawReason.trim();
+  if (trimmed.length > 1000) {
+    return { error: '`reason` must be at most 1000 characters.' };
+  }
+
+  return { value: trimmed || null };
 }
 
 async function getAdminUsers(req, res) {
@@ -118,6 +137,73 @@ async function getAdminHelpRequests(_req, res) {
     const helpRequests = await getHelpRequestsForAdmin();
 
     return res.status(200).json({ helpRequests });
+  } catch (_error) {
+    return res.status(500).json({
+      code: 'INTERNAL_ERROR',
+      message: 'Something went wrong',
+    });
+  }
+}
+
+async function patchAdminUserBan(req, res) {
+  try {
+    const userId = typeof req.params?.userId === 'string' ? req.params.userId.trim() : '';
+    if (!userId) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: '`userId` route param is required.',
+      });
+    }
+
+    const parsedReason = parseOptionalReason(req.body?.reason);
+    if (parsedReason.error) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: parsedReason.error,
+      });
+    }
+
+    const user = await banUserForAdmin({
+      userId,
+      reason: parsedReason.value,
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        code: 'NOT_FOUND',
+        message: 'User not found.',
+      });
+    }
+
+    return res.status(200).json({ user });
+  } catch (_error) {
+    return res.status(500).json({
+      code: 'INTERNAL_ERROR',
+      message: 'Something went wrong',
+    });
+  }
+}
+
+async function patchAdminUserUnban(req, res) {
+  try {
+    const userId = typeof req.params?.userId === 'string' ? req.params.userId.trim() : '';
+    if (!userId) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: '`userId` route param is required.',
+      });
+    }
+
+    const user = await unbanUserForAdmin({ userId });
+
+    if (!user) {
+      return res.status(404).json({
+        code: 'NOT_FOUND',
+        message: 'User not found.',
+      });
+    }
+
+    return res.status(200).json({ user });
   } catch (_error) {
     return res.status(500).json({
       code: 'INTERNAL_ERROR',
@@ -357,6 +443,8 @@ async function getAdminDeploymentMonitoring(req, res) {
 
 module.exports = {
   getAdminUsers,
+  patchAdminUserBan,
+  patchAdminUserUnban,
   getAdminHelpRequests,
   getAdminAnnouncements,
   getAdminStats,

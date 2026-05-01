@@ -1,10 +1,10 @@
 const jwt = require('jsonwebtoken');
-const { findAdminByUserId } = require('./repository');
+const { findAdminByUserId, findUserAuthStateById } = require('./repository');
 
 const { env } = require('../../config/env');
 const JWT_SECRET = env.jwt.secret;
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -15,22 +15,46 @@ function requireAuth(req, res, next) {
   }
 
   const token = authHeader.split(' ')[1];
+  let decoded;
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    decoded = jwt.verify(token, JWT_SECRET);
+  } catch (_error) {
+    return res.status(401).json({
+      code: 'UNAUTHORIZED',
+      message: 'Invalid or expired token',
+    });
+  }
+
+  try {
+    const userState = await findUserAuthStateById(decoded.userId);
+
+    if (!userState || userState.is_deleted) {
+      return res.status(401).json({
+        code: 'UNAUTHORIZED',
+        message: 'Invalid or expired token',
+      });
+    }
+
+    if (userState.is_banned) {
+      return res.status(403).json({
+        code: 'USER_BANNED',
+        message: 'Your account is banned. Please contact support.',
+      });
+    }
 
     req.user = {
       userId: decoded.userId,
-      email: decoded.email,
+      email: decoded.email || userState.email,
       isAdmin: decoded.isAdmin,
       adminRole: decoded.adminRole,
     };
 
     return next();
   } catch (_error) {
-    return res.status(401).json({
-      code: 'UNAUTHORIZED',
-      message: 'Invalid or expired token',
+    return res.status(500).json({
+      code: 'INTERNAL_ERROR',
+      message: 'Something went wrong',
     });
   }
 }

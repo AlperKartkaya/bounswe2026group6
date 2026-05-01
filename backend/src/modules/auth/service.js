@@ -116,6 +116,12 @@ async function loginUser({ email, password }) {
     throw error;
   }
 
+  if (user.is_banned) {
+    const error = new Error('Your account is banned. Please contact support.');
+    error.code = 'USER_BANNED';
+    throw error;
+  }
+
   if (!user.is_email_verified) {
     const error = new Error('Email is not verified');
     error.code = 'EMAIL_NOT_VERIFIED';

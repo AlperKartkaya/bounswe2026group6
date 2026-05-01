@@ -37,15 +37,15 @@ async function seedUsers() {
     `
       INSERT INTO users (
         user_id, email, password_hash, is_email_verified, is_deleted, accepted_terms,
-        is_banned, created_at
+        is_banned, ban_reason, banned_at, created_at
       )
       VALUES
-        ('admin_user',     'admin@example.com',     'hash', TRUE,  FALSE, TRUE, FALSE, NOW() - INTERVAL '5 days'),
-        ('user_alice',     'alice@example.com',     'hash', TRUE,  FALSE, TRUE, FALSE, NOW() - INTERVAL '4 days'),
-        ('user_bob',       'bob@example.com',       'hash', FALSE, FALSE, TRUE, FALSE, NOW() - INTERVAL '3 days'),
-        ('user_carol',     'carol@example.com',     'hash', TRUE,  FALSE, TRUE, TRUE,  NOW() - INTERVAL '2 days'),
-        ('user_dave',      'dave@example.com',      'hash', FALSE, FALSE, TRUE, TRUE,  NOW() - INTERVAL '1 days'),
-        ('user_deleted',   'deleted@example.com',   'hash', TRUE,  TRUE,  TRUE, FALSE, NOW() - INTERVAL '6 days')
+        ('admin_user',     'admin@example.com',     'hash', TRUE,  FALSE, TRUE, FALSE, NULL, NULL, NOW() - INTERVAL '5 days'),
+        ('user_alice',     'alice@example.com',     'hash', TRUE,  FALSE, TRUE, FALSE, NULL, NULL, NOW() - INTERVAL '4 days'),
+        ('user_bob',       'bob@example.com',       'hash', FALSE, FALSE, TRUE, FALSE, NULL, NULL, NOW() - INTERVAL '3 days'),
+        ('user_carol',     'carol@example.com',     'hash', TRUE,  FALSE, TRUE, TRUE,  'Abusive content', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'),
+        ('user_dave',      'dave@example.com',      'hash', FALSE, FALSE, TRUE, TRUE,  NULL, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 days'),
+        ('user_deleted',   'deleted@example.com',   'hash', TRUE,  TRUE,  TRUE, FALSE, NULL, NULL, NOW() - INTERVAL '6 days')
     `,
   );
 
@@ -149,6 +149,8 @@ describe('GET /api/admin/users', () => {
         username: 'Alice Anderson',
         isEmailVerified: true,
         isBanned: false,
+        banReason: null,
+        bannedAt: null,
         isAdmin: false,
       }),
     );
@@ -279,5 +281,132 @@ describe('GET /api/admin/users', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('PATCH /api/admin/users/:userId/ban and /unban', () => {
+  test('ban endpoint returns 401 without token', async () => {
+    await seedUsers();
+    const app = createTestApp();
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_alice/ban')
+      .send({ reason: 'Abusive behavior' });
+
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe('UNAUTHORIZED');
+  });
+
+  test('ban endpoint returns 403 for non-admin token', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const userToken = buildAuthToken({ userId: 'user_alice', isAdmin: false });
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_bob/ban')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ reason: 'Spam' });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('FORBIDDEN');
+  });
+
+  test('ban endpoint updates ban state with optional reason', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_bob/ban')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Repeated abuse' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toEqual(
+      expect.objectContaining({
+        userId: 'user_bob',
+        isBanned: true,
+        banReason: 'Repeated abuse',
+      }),
+    );
+    expect(response.body.user.bannedAt).toEqual(expect.any(String));
+
+    const dbResult = await query(
+      `
+        SELECT is_banned, ban_reason, banned_at
+        FROM users
+        WHERE user_id = 'user_bob'
+      `,
+    );
+
+    expect(dbResult.rows[0].is_banned).toBe(true);
+    expect(dbResult.rows[0].ban_reason).toBe('Repeated abuse');
+    expect(dbResult.rows[0].banned_at).toBeTruthy();
+  });
+
+  test('ban endpoint accepts empty reason and stores null', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_bob/ban')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: '   ' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toEqual(
+      expect.objectContaining({
+        userId: 'user_bob',
+        isBanned: true,
+        banReason: null,
+      }),
+    );
+  });
+
+  test('unban endpoint clears ban fields and restores active state', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_carol/unban')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toEqual(
+      expect.objectContaining({
+        userId: 'user_carol',
+        isBanned: false,
+        banReason: null,
+        bannedAt: null,
+      }),
+    );
+
+    const dbResult = await query(
+      `
+        SELECT is_banned, ban_reason, banned_at
+        FROM users
+        WHERE user_id = 'user_carol'
+      `,
+    );
+
+    expect(dbResult.rows[0].is_banned).toBe(false);
+    expect(dbResult.rows[0].ban_reason).toBeNull();
+    expect(dbResult.rows[0].banned_at).toBeNull();
+  });
+
+  test('ban endpoint returns 404 for missing user', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .patch('/api/admin/users/missing_user/ban')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Abuse' });
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('NOT_FOUND');
   });
 });

@@ -147,6 +147,7 @@ describe('loginUser', () => {
       email: 'test@test.com',
       password_hash: hash,
       is_email_verified: true,
+      is_banned: false,
       is_deleted: false,
     });
     findAdminByUserId.mockResolvedValue(null);
@@ -158,6 +159,25 @@ describe('loginUser', () => {
 
     expect(result.accessToken).toBeDefined();
     expect(result.user.email).toBe('test@test.com');
+  });
+
+  test('throws USER_BANNED when account is banned', async () => {
+    const bcrypt = require('bcrypt');
+    const hash = await bcrypt.hash('12345678', 10);
+
+    findUserByEmail.mockResolvedValue({
+      user_id: 'uuid-1',
+      email: 'test@test.com',
+      password_hash: hash,
+      is_email_verified: true,
+      is_banned: true,
+      is_deleted: false,
+    });
+
+    await expect(loginUser({
+      email: 'test@test.com',
+      password: '12345678',
+    })).rejects.toMatchObject({ code: 'USER_BANNED' });
   });
 });
 

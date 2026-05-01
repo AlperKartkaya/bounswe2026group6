@@ -155,6 +155,24 @@ describe('login', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
   });
+
+  test('403 - user is banned', async () => {
+    validateLoginInput.mockReturnValue(null);
+    const error = new Error('User banned');
+    error.code = 'USER_BANNED';
+    loginUser.mockRejectedValue(error);
+    const req = { body: {} };
+    const res = mockRes();
+
+    await login(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'USER_BANNED',
+      }),
+    );
+  });
 });
 
 // ─── verifyEmail ──────────────────────────────────────────────────────────────
