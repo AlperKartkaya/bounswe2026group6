@@ -5,7 +5,7 @@ const {
   resetDatabase,
   waitForUserByEmail,
 } = require('./helpers/db');
-const { loginThroughUi } = require('./helpers/ui');
+const { getStoredAccessToken, loginThroughUi } = require('./helpers/ui');
 
 async function openUsersTab(page) {
   await expect(page).toHaveURL(/\/admin(\?|$)/, { timeout: 20_000 });
@@ -183,9 +183,10 @@ test('admin can ban and unban user, and user access is restored after unban', as
   await page.goto('/login');
   await loginThroughUi(page, { email: targetEmail, password });
   await expect(page.getByText(/banned/i)).toBeVisible();
+  await expect.poll(async () => getStoredAccessToken(page)).toBeNull();
 
-  await page.goto('/home');
-  await expect(page).toHaveURL(/\/login(\?|$)/);
+  await page.goto('/profile');
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fprofile$/);
 
   await page.goto('/login');
   await loginThroughUi(page, { email: adminEmail, password });
