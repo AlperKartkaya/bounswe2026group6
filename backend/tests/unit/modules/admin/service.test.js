@@ -26,12 +26,41 @@ beforeEach(() => {
 
 describe('admin service', () => {
   test('getUsersForAdmin delegates to repository', async () => {
-    listUsers.mockResolvedValue([{ user_id: 'u1' }]);
+    listUsers.mockResolvedValue({
+      users: [
+        {
+          user_id: 'u1',
+          first_name: 'John',
+          last_name: 'Doe',
+          email: 'john@example.com',
+          is_email_verified: true,
+          is_banned: false,
+          created_at: '2026-05-01T10:00:00.000Z',
+          admin_id: null,
+          admin_role: null,
+        },
+      ],
+      total: 1,
+    });
 
     const result = await getUsersForAdmin();
 
     expect(listUsers).toHaveBeenCalledTimes(1);
-    expect(result).toEqual([{ user_id: 'u1' }]);
+    expect(result).toEqual({
+      users: [
+        {
+          userId: 'u1',
+          username: 'John Doe',
+          email: 'john@example.com',
+          isEmailVerified: true,
+          isBanned: false,
+          createdAt: '2026-05-01T10:00:00.000Z',
+          isAdmin: false,
+          adminRole: null,
+        },
+      ],
+      total: 1,
+    });
   });
 
   test('getHelpRequestsForAdmin delegates to repository', async () => {
