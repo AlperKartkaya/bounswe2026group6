@@ -187,7 +187,7 @@ test('extra address autocomplete selection updates map pin', async ({ page }) =>
   const extraAddressInput = page.locator('#extraAddress');
   await extraAddressInput.fill('Buyukdere');
 
-  const suggestion = page.getByRole('button', {
+  const suggestion = page.getByRole('option', {
     name: 'Buyukdere Cd. 45, Levent, Besiktas, Istanbul, Turkey',
   });
 
