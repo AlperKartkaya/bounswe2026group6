@@ -29,9 +29,12 @@ import com.neph.features.profile.data.LocationData
 import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.profile.data.bloodTypeOptions
+import com.neph.features.profile.data.calculateAgeFromDateOfBirth
 import com.neph.features.profile.data.combinePhoneNumber
+import com.neph.features.profile.data.composeFullName
 import com.neph.features.profile.data.expertiseOptionsFor
 import com.neph.features.profile.data.locationData
+import com.neph.features.profile.data.normalizeDateOfBirth
 import com.neph.features.profile.data.normalizePhoneParts
 import com.neph.features.profile.data.parseListField
 import com.neph.features.profile.data.professionOptionsFor
@@ -53,6 +56,9 @@ import com.neph.ui.map.SharedCoordinatesMapAction
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun CompleteProfileScreen(
@@ -64,14 +70,24 @@ fun CompleteProfileScreen(
     val spacing = LocalNephSpacing.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val existingNameParts = remember(existingProfile.firstName, existingProfile.lastName, existingProfile.fullName) {
+        val first = existingProfile.firstName?.trim().orEmpty()
+        val last = existingProfile.lastName?.trim().orEmpty()
+        if (first.isNotBlank() || last.isNotBlank()) {
+            first to last
+        } else {
+            splitFullName(existingProfile.fullName.orEmpty())
+        }
+    }
 
-    var fullName by rememberSaveable { mutableStateOf(existingProfile.fullName.orEmpty()) }
+    var firstName by rememberSaveable { mutableStateOf(existingNameParts.first) }
+    var lastName by rememberSaveable { mutableStateOf(existingNameParts.second) }
     var countryCode by rememberSaveable { mutableStateOf(existingPhoneParts.countryCode) }
     var phone by rememberSaveable { mutableStateOf(existingPhoneParts.phone) }
     var gender by rememberSaveable { mutableStateOf(existingProfile.gender.orEmpty()) }
     var height by rememberSaveable { mutableStateOf(existingProfile.height.toEditableString()) }
     var weight by rememberSaveable { mutableStateOf(existingProfile.weight.toEditableString()) }
-    var age by rememberSaveable { mutableStateOf(existingProfile.age?.toString().orEmpty()) }
+    var dateOfBirth by rememberSaveable { mutableStateOf(existingProfile.dateOfBirth.orEmpty()) }
     var bloodType by rememberSaveable { mutableStateOf(existingProfile.bloodType.orEmpty()) }
     var medicalHistory by rememberSaveable { mutableStateOf(existingProfile.medicalHistory.orEmpty()) }
     var chronicDiseases by rememberSaveable { mutableStateOf(existingProfile.chronicDiseases.orEmpty()) }
@@ -123,12 +139,19 @@ fun CompleteProfileScreen(
         info = ""
         mapActionInfo = ""
 
-        val normalizedName = fullName.trim()
+        val normalizedFirstName = firstName.trim()
+        val normalizedLastName = lastName.trim()
         val normalizedPhone = phone.trim()
-        val (firstName, lastName) = splitFullName(normalizedName)
+        val normalizedDateOfBirth = normalizeDateOfBirth(dateOfBirth)
+        val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
-        if (firstName.isBlank() || lastName.isBlank()) {
+        if (normalizedFirstName.isBlank() || normalizedLastName.isBlank()) {
             error = "Please enter both first and last name."
+            return
+        }
+
+        if (normalizedDateOfBirth == null || normalizedDateOfBirth > todayIso) {
+            error = "Please enter a valid date of birth in YYYY-MM-DD format."
             return
         }
 
@@ -142,7 +165,7 @@ fun CompleteProfileScreen(
             return
         }
 
-        if (height.isBlank() || weight.isBlank() || age.isBlank() ||
+        if (height.isBlank() || weight.isBlank() ||
             country.isBlank() || city.isBlank() || district.isBlank() || neighborhood.isBlank()
         ) {
             error = "Please fill in all required fields."
@@ -151,14 +174,14 @@ fun CompleteProfileScreen(
 
         val heightFloat = height.toFloatOrNull()
         val weightFloat = weight.toFloatOrNull()
-        val ageInt = age.toIntOrNull()
+        val ageInt = calculateAgeFromDateOfBirth(normalizedDateOfBirth)
         if (heightFloat == null || weightFloat == null || heightFloat <= 0f || weightFloat <= 0f) {
             error = "Height and weight must be valid positive numbers."
             return
         }
 
-        if (ageInt == null || ageInt <= 0) {
-            error = "Age must be a valid positive number."
+        if (ageInt == null) {
+            error = "Please enter a valid date of birth in YYYY-MM-DD format."
             return
         }
 
@@ -166,11 +189,14 @@ fun CompleteProfileScreen(
         scope.launch {
             try {
                 val profileToSync = ProfileRepository.getProfile().copy(
-                    fullName = normalizedName,
+                    firstName = normalizedFirstName,
+                    lastName = normalizedLastName,
+                    fullName = composeFullName(normalizedFirstName, normalizedLastName),
                     phone = combinePhoneNumber(countryCode, normalizedPhone),
                     gender = gender.takeIf(String::isNotBlank),
                     height = heightFloat,
                     weight = weightFloat,
+                    dateOfBirth = normalizedDateOfBirth,
                     age = ageInt,
                     bloodType = bloodType.takeIf(String::isNotBlank),
                     medicalHistory = medicalHistory.takeIf(String::isNotBlank),
@@ -241,13 +267,25 @@ fun CompleteProfileScreen(
         subtitle = "Set up your account details"
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
-            AppTextField(
-                value = fullName,
-                onValueChange = { fullName = it },
-                label = "Full Name",
-                testTag = "complete_profile_full_name",
-                placeholder = "Enter your full name"
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                AppTextField(
+                    value = firstName,
+                    onValueChange = { firstName = it },
+                    label = "First Name",
+                    testTag = "complete_profile_first_name",
+                    placeholder = "Enter your first name",
+                    modifier = Modifier.weight(1f)
+                )
+
+                AppTextField(
+                    value = lastName,
+                    onValueChange = { lastName = it },
+                    label = "Last Name",
+                    testTag = "complete_profile_last_name",
+                    placeholder = "Enter your last name",
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 AppDropdown(
@@ -297,12 +335,12 @@ fun CompleteProfileScreen(
             GenderSelector(value = gender, onValueChange = { gender = it })
 
             AppTextField(
-                value = age,
-                onValueChange = { age = it.filter(Char::isDigit).take(3) },
-                label = "Age",
-                testTag = "complete_profile_age",
-                placeholder = "Enter your age",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                value = dateOfBirth,
+                onValueChange = { dateOfBirth = it },
+                label = "Date of Birth",
+                testTag = "complete_profile_date_of_birth",
+                placeholder = "YYYY-MM-DD",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
 
             Text("Medical Information (optional)", style = MaterialTheme.typography.titleMedium)

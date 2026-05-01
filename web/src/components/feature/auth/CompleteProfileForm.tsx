@@ -34,19 +34,19 @@ import {
     patchMyProfession,
     patchMyProfile,
     putMyExpertiseAreas,
-    splitFullName,
     validateExpertiseAreas,
 } from "@/lib/profile";
 
 type ProfileForm = {
-    fullName: string;
+    firstName: string;
+    lastName: string;
     countryCode: string;
     phone: string;
     gender: string;
     height: string;
     weight: string;
     bloodType: string;
-    age: string;
+    dateOfBirth: string;
     medicalHistory: string;
     profession: string;
     expertise: string[];
@@ -59,14 +59,15 @@ type ProfileForm = {
 };
 
 const initialForm: ProfileForm = {
-    fullName: "",
+    firstName: "",
+    lastName: "",
     countryCode: "+90",
     phone: "",
     gender: "",
     height: "",
     weight: "",
     bloodType: "",
-    age: "",
+    dateOfBirth: "",
     medicalHistory: "",
     profession: "",
     expertise: [],
@@ -116,6 +117,20 @@ function toPickerValueFromSearchItem(item: {
     };
 }
 
+function splitLegacyFullName(fullName: string) {
+    const normalized = fullName.trim().replace(/\s+/g, " ");
+    if (!normalized) {
+        return { firstName: "", lastName: "" };
+    }
+
+    const parts = normalized.split(" ");
+    const firstName = parts.shift() || "";
+    return {
+        firstName,
+        lastName: parts.join(" "),
+    };
+}
+
 export default function CompleteProfileForm() {
     const router = useRouter();
     const [form, setForm] = React.useState<ProfileForm>(initialForm);
@@ -136,10 +151,12 @@ export default function CompleteProfileForm() {
 
         try {
             const parsed = JSON.parse(savedDraft) as Partial<ProfileForm>;
+            const fallbackName = splitLegacyFullName((parsed as { fullName?: string }).fullName || "");
 
             setForm((currentForm) => ({
                 ...currentForm,
-                fullName: parsed.fullName || currentForm.fullName,
+                firstName: parsed.firstName || fallbackName.firstName || currentForm.firstName,
+                lastName: parsed.lastName || fallbackName.lastName || currentForm.lastName,
                 countryCode: parsed.countryCode || currentForm.countryCode,
                 phone: parsed.phone || currentForm.phone,
             }));
@@ -328,15 +345,16 @@ export default function CompleteProfileForm() {
     const handleSave = async () => {
         setError("");
 
-        if (!form.fullName.trim()) {
-            setError("Please enter your full name.");
+        const firstName = form.firstName.trim();
+        const lastName = form.lastName.trim();
+
+        if (!firstName) {
+            setError("Please enter your first name.");
             return;
         }
 
-        const { firstName, lastName } = splitFullName(form.fullName);
-
-        if (!firstName || !lastName) {
-            setError("Please enter both first and last name.");
+        if (!lastName) {
+            setError("Please enter your last name.");
             return;
         }
 
@@ -345,8 +363,8 @@ export default function CompleteProfileForm() {
             return;
         }
 
-        if (!form.age.trim()) {
-            setError("Please enter your age.");
+        if (!form.dateOfBirth) {
+            setError("Please select your date of birth.");
             return;
         }
 
@@ -363,9 +381,9 @@ export default function CompleteProfileForm() {
             return;
         }
 
-        const age = Number(form.age);
-        if (!Number.isInteger(age) || age <= 0) {
-            setError("Please enter a valid age.");
+        const dateOfBirth = new Date(form.dateOfBirth);
+        if (Number.isNaN(dateOfBirth.getTime()) || dateOfBirth > new Date()) {
+            setError("Please select a valid date of birth.");
             return;
         }
 
@@ -435,7 +453,7 @@ export default function CompleteProfileForm() {
             });
 
             await patchMyPhysical(token, {
-                age,
+                dateOfBirth: form.dateOfBirth,
                 gender: form.gender || null,
                 height: Number(form.height),
                 weight: Number(form.weight),
@@ -515,17 +533,31 @@ export default function CompleteProfileForm() {
 
     return (
         <div className="mx-auto flex w-full max-w-md flex-col gap-5">
-            <TextInput
-                id="fullName"
-                label="Full Name"
-                value={form.fullName}
-                onChange={(e) =>
-                    setForm({
-                        ...form,
-                        fullName: e.target.value,
-                    })
-                }
-            />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <TextInput
+                    id="firstName"
+                    label="First Name"
+                    value={form.firstName}
+                    onChange={(e) =>
+                        setForm({
+                            ...form,
+                            firstName: e.target.value,
+                        })
+                    }
+                />
+
+                <TextInput
+                    id="lastName"
+                    label="Last Name"
+                    value={form.lastName}
+                    onChange={(e) =>
+                        setForm({
+                            ...form,
+                            lastName: e.target.value,
+                        })
+                    }
+                />
+            </div>
 
             <div className="grid grid-cols-[120px_1fr] gap-3">
                 <div className="w-[120px]">
@@ -603,14 +635,14 @@ export default function CompleteProfileForm() {
                 />
             </ProfileInfoRow>
 
-            <ProfileInfoRow label="Age">
+            <ProfileInfoRow label="Date of Birth">
                 <TextInput
-                    id="age"
-                    type="number"
-                    inputMode="numeric"
-                    value={form.age}
+                    id="dateOfBirth"
+                    type="date"
+                    value={form.dateOfBirth}
+                    max={new Date().toISOString().slice(0, 10)}
                     onChange={(e) =>
-                        setForm({ ...form, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
+                        setForm({ ...form, dateOfBirth: e.target.value })
                     }
                 />
             </ProfileInfoRow>

@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/layout/PageContainer";
 import { clearAccessToken, getAccessToken } from "@/lib/auth";
 import { useAuthSession } from "@/lib/authSession";
 import { fetchUnreadNotificationCount } from "@/lib/notifications";
+import { fetchMyProfile } from "@/lib/profile";
 
 const navItemsOrdered = [
     { label: "Home", href: "/home" },
@@ -22,15 +23,95 @@ const navItemsOrdered = [
 
 const guestAllowedPaths = new Set(["/home", "/news", "/emergency-numbers", "/crisis-map", "/gathering-areas"]);
 
+function resolveUserInitials(email: string | null | undefined) {
+    const localPart = (email || "").trim().split("@")[0] || "";
+    const parts = localPart
+        .split(/[^a-zA-Z0-9]+/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+    if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    }
+
+    if (parts.length === 1) {
+        return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return "PP";
+}
+
+function resolveNameInitials(firstName?: string | null, lastName?: string | null) {
+    const first = (firstName || "").trim();
+    const last = (lastName || "").trim();
+
+    if (first && last) {
+        return `${first[0]}${last[0]}`.toUpperCase();
+    }
+
+    if (first) {
+        return first.slice(0, 2).toUpperCase();
+    }
+
+    if (last) {
+        return last.slice(0, 2).toUpperCase();
+    }
+
+    return null;
+}
+
 export function TopNavbar() {
     const router = useRouter();
     const pathname = usePathname();
     const { state, refresh } = useAuthSession();
     const [unreadCount, setUnreadCount] = React.useState(0);
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+    const [avatarInitials, setAvatarInitials] = React.useState("PP");
     const menuRef = React.useRef<HTMLDivElement | null>(null);
     const isAuthenticated = state.phase === "authenticated";
     const isAdmin = Boolean(state.user?.isAdmin);
+
+    React.useEffect(() => {
+        if (!isAuthenticated) {
+            setAvatarInitials("PP");
+            return;
+        }
+
+        const token = getAccessToken();
+        if (!token) {
+            setAvatarInitials(resolveUserInitials(state.user?.email));
+            return;
+        }
+
+        let cancelled = false;
+
+        void fetchMyProfile(token)
+            .then((profileResponse) => {
+                if (cancelled) {
+                    return;
+                }
+
+                const profileInitials = resolveNameInitials(
+                    profileResponse.profile.firstName,
+                    profileResponse.profile.lastName
+                );
+
+                setAvatarInitials(
+                    profileInitials || resolveUserInitials(state.user?.email)
+                );
+            })
+            .catch(() => {
+                if (cancelled) {
+                    return;
+                }
+
+                setAvatarInitials(resolveUserInitials(state.user?.email));
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isAuthenticated, state.user?.email]);
 
     React.useEffect(() => {
         const syncUnreadCount = () => {
@@ -172,7 +253,7 @@ export function TopNavbar() {
                         aria-expanded={isMenuOpen}
                     >
                         {isAuthenticated ? (
-                            "NP"
+                            avatarInitials
                         ) : (
                             <svg
                                 width="18"

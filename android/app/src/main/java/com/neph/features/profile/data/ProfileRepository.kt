@@ -108,8 +108,18 @@ object ProfileRepository {
         val token = AuthSessionStore.getAccessToken().orEmpty()
         check(token.isNotBlank()) { "Access token is required before saving the profile." }
 
-        val normalizedName = profile.fullName?.trim().orEmpty()
-        val (firstName, lastName) = splitFullName(normalizedName)
+        val fallbackNames = splitFullName(profile.fullName.orEmpty())
+        val firstName = profile.firstName?.trim()?.takeIf(String::isNotBlank) ?: fallbackNames.first
+        val lastName = profile.lastName?.trim()?.takeIf(String::isNotBlank) ?: fallbackNames.second
+        val normalizedDateOfBirth = normalizeDateOfBirth(profile.dateOfBirth)
+        val resolvedAge = profile.age ?: calculateAgeFromDateOfBirth(normalizedDateOfBirth)
+        val normalizedProfile = profile.copy(
+            firstName = firstName,
+            lastName = lastName,
+            fullName = composeFullName(firstName, lastName),
+            dateOfBirth = normalizedDateOfBirth,
+            age = resolvedAge
+        )
 
         return try {
             JsonHttpClient.request(
@@ -119,7 +129,7 @@ object ProfileRepository {
                 body = JSONObject().apply {
                     put("firstName", firstName)
                     put("lastName", lastName)
-                    putNullable("phoneNumber", profile.phone?.trim()?.takeIf(String::isNotBlank))
+                    putNullable("phoneNumber", normalizedProfile.phone?.trim()?.takeIf(String::isNotBlank))
                 }
             )
 
@@ -128,10 +138,13 @@ object ProfileRepository {
                 method = "PATCH",
                 token = token,
                 body = JSONObject().apply {
-                    profile.age?.let { put("age", it) }
-                    putNullable("gender", profile.gender)
-                    profile.height?.let { put("height", it.toDouble()) }
-                    profile.weight?.let { put("weight", it.toDouble()) }
+                    putNullable("dateOfBirth", normalizedDateOfBirth)
+                    if (normalizedDateOfBirth == null) {
+                        resolvedAge?.let { put("age", it) }
+                    }
+                    putNullable("gender", normalizedProfile.gender)
+                    normalizedProfile.height?.let { put("height", it.toDouble()) }
+                    normalizedProfile.weight?.let { put("weight", it.toDouble()) }
                 }
             )
 
@@ -140,10 +153,10 @@ object ProfileRepository {
                 method = "PATCH",
                 token = token,
                 body = JSONObject().apply {
-                    put("medicalConditions", JSONArray(parseListField(profile.medicalHistory)))
-                    put("chronicDiseases", JSONArray(parseListField(profile.chronicDiseases)))
-                    put("allergies", JSONArray(parseListField(profile.allergies)))
-                    putNullable("bloodType", profile.bloodType)
+                    put("medicalConditions", JSONArray(parseListField(normalizedProfile.medicalHistory)))
+                    put("chronicDiseases", JSONArray(parseListField(normalizedProfile.chronicDiseases)))
+                    put("allergies", JSONArray(parseListField(normalizedProfile.allergies)))
+                    putNullable("bloodType", normalizedProfile.bloodType)
                 }
             )
 
@@ -168,7 +181,7 @@ object ProfileRepository {
                 method = "PATCH",
                 token = token,
                 body = JSONObject().apply {
-                    putNullable("profession", profile.profession)
+                    putNullable("profession", normalizedProfile.profession)
                 }
             )
 
@@ -177,11 +190,11 @@ object ProfileRepository {
                 method = "PUT",
                 token = token,
                 body = JSONObject().apply {
-                    put("expertiseAreas", JSONArray(profile.expertise))
+                    put("expertiseAreas", JSONArray(normalizedProfile.expertise))
                 }
             )
 
-            saveProfile(profile)
+            saveProfile(normalizedProfile)
 
             val refreshed = fetchAndCacheRemoteProfile()
             saveProfile(refreshed)
@@ -315,8 +328,16 @@ object ProfileRepository {
     }
 
     private fun persistProfile(profile: ProfileData) {
+        val resolvedFirstName = profile.firstName?.trim()?.takeIf(String::isNotBlank)
+        val resolvedLastName = profile.lastName?.trim()?.takeIf(String::isNotBlank)
+        val resolvedDateOfBirth = normalizeDateOfBirth(profile.dateOfBirth)
+        val resolvedAge = profile.age ?: calculateAgeFromDateOfBirth(resolvedDateOfBirth)
+        val resolvedFullName = composeFullName(resolvedFirstName, resolvedLastName) ?: profile.fullName
+
         prefs.edit().apply {
-            putString("fullName", profile.fullName)
+            putString("firstName", resolvedFirstName)
+            putString("lastName", resolvedLastName)
+            putString("fullName", resolvedFullName)
             putString("email", profile.email)
             putString("phone", profile.phone)
             putString("profession", profile.profession)
@@ -325,7 +346,8 @@ object ProfileRepository {
             putFloatOrRemove("weight", profile.weight)
             putString("bloodType", profile.bloodType)
             putString("gender", profile.gender)
-            putIntOrRemove("age", profile.age)
+            putString("dateOfBirth", resolvedDateOfBirth)
+            putIntOrRemove("age", resolvedAge)
             putString("medicalHistory", profile.medicalHistory)
             putString("chronicDiseases", profile.chronicDiseases)
             putString("allergies", profile.allergies)
@@ -352,8 +374,15 @@ object ProfileRepository {
             }
         }
 
+        val storedFirstName = prefs.getString("firstName", null)
+        val storedLastName = prefs.getString("lastName", null)
+        val storedDateOfBirth = normalizeDateOfBirth(prefs.getString("dateOfBirth", null))
+        val storedAge = prefs.getNullableInt("age") ?: calculateAgeFromDateOfBirth(storedDateOfBirth)
+
         return ProfileData(
-            fullName = prefs.getString("fullName", null),
+            firstName = storedFirstName,
+            lastName = storedLastName,
+            fullName = composeFullName(storedFirstName, storedLastName) ?: prefs.getString("fullName", null),
             email = prefs.getString("email", null),
             phone = prefs.getString("phone", null),
             profession = prefs.getString("profession", null),
@@ -362,7 +391,8 @@ object ProfileRepository {
             weight = prefs.getNullableFloat("weight"),
             bloodType = prefs.getString("bloodType", null),
             gender = prefs.getString("gender", null),
-            age = prefs.getNullableInt("age"),
+            dateOfBirth = storedDateOfBirth,
+            age = storedAge,
             medicalHistory = prefs.getString("medicalHistory", null),
             chronicDiseases = prefs.getString("chronicDiseases", null),
             allergies = prefs.getString("allergies", null),
@@ -419,16 +449,19 @@ object ProfileRepository {
         val neighborhoodValue = neighborhoodFromAdministrative.ifBlank { parsedAddress.second }
         val extraAddressFromBackend = administrative.optStringOrNull("extraAddress")
             ?: parsedAddress.third
+        val firstName = profile.optStringOrNull("firstName")
+        val lastName = profile.optStringOrNull("lastName")
+        val dateOfBirth = normalizeDateOfBirth(physicalInfo.optStringOrNull("dateOfBirth"))
+        val resolvedAge = physicalInfo.optNullableInt("age") ?: calculateAgeFromDateOfBirth(dateOfBirth)
         val sharedLatitude = coordinate.optNullableDouble("latitude")
             ?: locationProfile.optNullableDouble("latitude")
         val sharedLongitude = coordinate.optNullableDouble("longitude")
             ?: locationProfile.optNullableDouble("longitude")
 
         return ProfileData(
-            fullName = listOf(
-                profile.optStringOrNull("firstName"),
-                profile.optStringOrNull("lastName")
-            ).filterNotNull().joinToString(" ").trim().takeIf { it.isNotBlank() },
+            firstName = firstName,
+            lastName = lastName,
+            fullName = composeFullName(firstName, lastName),
             email = email.takeIf { it.isNotBlank() } ?: cachedProfileSnapshot.email,
             phone = profile.optStringOrNull("phoneNumber"),
             profession = expertise?.optStringOrNull("profession"),
@@ -437,7 +470,8 @@ object ProfileRepository {
             weight = physicalInfo.optNullableFloat("weight"),
             bloodType = normalizeBloodType(healthInfo.optStringOrNull("bloodType")),
             gender = physicalInfo.optStringOrNull("gender"),
-            age = physicalInfo.optNullableInt("age"),
+            dateOfBirth = dateOfBirth,
+            age = resolvedAge,
             medicalHistory = healthInfo.optJSONArray("medicalConditions").toStringList().joinToString(", ").takeIf { it.isNotBlank() },
             chronicDiseases = healthInfo.optJSONArray("chronicDiseases").toStringList().joinToString(", ").takeIf { it.isNotBlank() },
             allergies = healthInfo.optJSONArray("allergies").toStringList().joinToString(", ").takeIf { it.isNotBlank() },

@@ -34,6 +34,22 @@ describe('profiles validators', () => {
 			expect(result.ok).toBe(true);
 		});
 
+		test('accepts dateOfBirth and auto-derives age when omitted', () => {
+			const result = validatePhysicalPatch({ dateOfBirth: '2000-05-15' });
+
+			expect(result.ok).toBe(true);
+			expect(result.data.dateOfBirth).toBe('2000-05-15');
+			expect(typeof result.data.age).toBe('number');
+			expect(result.data.age).toBeGreaterThanOrEqual(0);
+		});
+
+		test('rejects future dateOfBirth', () => {
+			const result = validatePhysicalPatch({ dateOfBirth: '2999-01-01' });
+
+			expect(result.ok).toBe(false);
+			expect(result.message).toBe('dateOfBirth cannot be in the future');
+		});
+
 		test('rejects negative age', () => {
 			const result = validatePhysicalPatch({ age: -1 });
 

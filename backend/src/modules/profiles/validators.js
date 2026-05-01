@@ -19,6 +19,29 @@ function pickAllowed(body, allowedKeys) {
   );
 }
 
+function toIsoDateString(value) {
+  const parsedMs = Date.parse(value);
+  if (Number.isNaN(parsedMs)) {
+    return null;
+  }
+
+  return new Date(parsedMs).toISOString().slice(0, 10);
+}
+
+function calculateAgeFromDateOfBirth(isoDate) {
+  const [year, month, day] = isoDate.split('-').map((part) => Number(part));
+  const today = new Date();
+  let age = today.getUTCFullYear() - year;
+  const monthDelta = today.getUTCMonth() + 1 - month;
+  const dayDelta = today.getUTCDate() - day;
+
+  if (monthDelta < 0 || (monthDelta === 0 && dayDelta < 0)) {
+    age -= 1;
+  }
+
+  return age;
+}
+
 function validateProfilePatch(body, { requireNames } = { requireNames: false }) {
   if (!isPlainObject(body)) {
     return { ok: false, code: 'VALIDATION_ERROR', message: 'Payload must be an object' };
@@ -60,7 +83,7 @@ function validatePhysicalPatch(body) {
     return { ok: false, code: 'VALIDATION_ERROR', message: 'Payload must be an object' };
   }
 
-  const data = pickAllowed(body, ['age', 'gender', 'height', 'weight']);
+  const data = pickAllowed(body, ['age', 'dateOfBirth', 'gender', 'height', 'weight']);
 
   if (Object.keys(data).length === 0) {
     return { ok: false, code: 'VALIDATION_ERROR', message: 'At least one physical field must be provided' };
@@ -68,6 +91,30 @@ function validatePhysicalPatch(body) {
 
   if (data.age !== undefined && (typeof data.age !== 'number' || data.age < 0)) {
     return { ok: false, code: 'VALIDATION_ERROR', message: 'age must be a number >= 0' };
+  }
+
+  if (data.dateOfBirth !== undefined) {
+    if (data.dateOfBirth !== null && typeof data.dateOfBirth !== 'string') {
+      return { ok: false, code: 'VALIDATION_ERROR', message: 'dateOfBirth must be a string (YYYY-MM-DD) or null' };
+    }
+
+    if (typeof data.dateOfBirth === 'string') {
+      const normalizedDate = toIsoDateString(data.dateOfBirth.trim());
+      if (!normalizedDate) {
+        return { ok: false, code: 'VALIDATION_ERROR', message: 'dateOfBirth must be a valid date string' };
+      }
+
+      const todayIso = new Date().toISOString().slice(0, 10);
+      if (normalizedDate > todayIso) {
+        return { ok: false, code: 'VALIDATION_ERROR', message: 'dateOfBirth cannot be in the future' };
+      }
+
+      data.dateOfBirth = normalizedDate;
+
+      if (data.age === undefined) {
+        data.age = calculateAgeFromDateOfBirth(normalizedDate);
+      }
+    }
   }
 
   if (data.gender !== undefined && data.gender !== null && typeof data.gender !== 'string') {

@@ -266,7 +266,7 @@ export function LocationPicker({
         <div className="location-picker-wrap flex flex-col gap-3">
             <HelperText className="text-sm text-[#2b2b33]">{label}</HelperText>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <TextInput
                     id={searchInputId}
                     label="Search location"

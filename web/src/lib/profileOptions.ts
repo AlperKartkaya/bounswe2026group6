@@ -4,7 +4,6 @@ export const professionOptions = [
     { label: "Firefighter", value: "Firefighter" },
     { label: "Nurse", value: "Nurse" },
     { label: "Engineer", value: "Engineer" },
-    { label: "Volunteer", value: "Volunteer" },
 ];
 
 export const expertiseOptions = [

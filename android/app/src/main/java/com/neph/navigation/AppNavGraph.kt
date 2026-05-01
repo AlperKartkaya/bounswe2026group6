@@ -31,6 +31,7 @@ import com.neph.features.news.presentation.NewsScreen
 import com.neph.features.notifications.presentation.NotificationsScreen
 import com.neph.features.privacysecurity.presentation.PrivacySecurityScreen
 import com.neph.features.profile.data.ProfileRepository
+import com.neph.features.profile.data.composeFullName
 import com.neph.features.profile.presentation.EditProfileScreen
 import com.neph.features.profile.presentation.ProfileScreen
 import com.neph.features.requesthelp.presentation.RequestHelpScreen
@@ -84,7 +85,8 @@ fun AppNavGraph(
     fun resolveProfileBadgeText(authenticated: Boolean): String {
         if (!authenticated) return ""
 
-        val fullName = ProfileRepository.getProfile().fullName.orEmpty().trim()
+        val profile = ProfileRepository.getProfile()
+        val fullName = (composeFullName(profile.firstName, profile.lastName) ?: profile.fullName).orEmpty().trim()
         if (fullName.isBlank()) return "PP"
 
         val parts = fullName.split(Regex("\\s+")).filter { it.isNotBlank() }
