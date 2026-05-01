@@ -76,7 +76,7 @@ test('admin can open Users tab and see registered users with required columns', 
   // Table headers expected from the issue (Acceptance Criteria).
   await expect(page.getByRole('columnheader', { name: 'Username' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'User ID' })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: 'Email' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Email', exact: true })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Email Verified' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Banned' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Created At' })).toBeVisible();
