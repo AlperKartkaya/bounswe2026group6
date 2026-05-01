@@ -23,6 +23,8 @@ const {
 const {
   listUsers,
   banUserById,
+  findBanTargetByUserId,
+  unbanUserById,
   listHelpRequests,
   listAnnouncements,
   getBasicStats,
@@ -86,6 +88,7 @@ describe('admin service', () => {
   });
 
   test('banUserForAdmin bans user and applies requester/volunteer cleanup', async () => {
+    findBanTargetByUserId.mockResolvedValue({ user_id: 'u1', is_admin: false });
     banUserById.mockResolvedValue({
       user_id: 'u1',
       first_name: 'John',
@@ -110,6 +113,7 @@ describe('admin service', () => {
 
     const result = await banUserForAdmin({ userId: 'u1', reason: 'Abuse' });
 
+    expect(findBanTargetByUserId).toHaveBeenCalledWith('u1');
     expect(banUserById).toHaveBeenCalledWith('u1', 'Abuse');
     expect(listHelpRequestsByUserId).toHaveBeenCalledWith('u1');
     expect(markHelpRequestAsCancelled).toHaveBeenCalledTimes(2);
@@ -129,15 +133,65 @@ describe('admin service', () => {
   });
 
   test('banUserForAdmin returns null for missing user without side effects', async () => {
-    banUserById.mockResolvedValue(null);
+    findBanTargetByUserId.mockResolvedValue(null);
 
     const result = await banUserForAdmin({ userId: 'missing', reason: null });
 
     expect(result).toBeNull();
+    expect(banUserById).not.toHaveBeenCalled();
     expect(listHelpRequestsByUserId).not.toHaveBeenCalled();
     expect(markHelpRequestAsCancelled).not.toHaveBeenCalled();
     expect(cancelAssignmentByRequestId).not.toHaveBeenCalled();
     expect(cancelAssignmentsForBannedVolunteer).not.toHaveBeenCalled();
+  });
+
+  test('banUserForAdmin blocks self-ban attempts', async () => {
+    await expect(
+      banUserForAdmin({ actorUserId: 'admin_1', userId: 'admin_1', reason: 'self' }),
+    ).rejects.toMatchObject({ code: 'SELF_BAN_FORBIDDEN' });
+
+    expect(findBanTargetByUserId).not.toHaveBeenCalled();
+    expect(banUserById).not.toHaveBeenCalled();
+  });
+
+  test('banUserForAdmin blocks admin targets', async () => {
+    findBanTargetByUserId.mockResolvedValue({ user_id: 'admin_2', is_admin: true });
+
+    await expect(
+      banUserForAdmin({ actorUserId: 'admin_1', userId: 'admin_2', reason: 'nope' }),
+    ).rejects.toMatchObject({ code: 'ADMIN_BAN_FORBIDDEN' });
+
+    expect(findBanTargetByUserId).toHaveBeenCalledWith('admin_2');
+    expect(banUserById).not.toHaveBeenCalled();
+    expect(listHelpRequestsByUserId).not.toHaveBeenCalled();
+    expect(markHelpRequestAsCancelled).not.toHaveBeenCalled();
+    expect(cancelAssignmentByRequestId).not.toHaveBeenCalled();
+    expect(cancelAssignmentsForBannedVolunteer).not.toHaveBeenCalled();
+  });
+
+  test('banUserForAdmin rolls back ban when cleanup fails', async () => {
+    findBanTargetByUserId.mockResolvedValue({ user_id: 'u1', is_admin: false });
+    banUserById.mockResolvedValue({
+      user_id: 'u1',
+      first_name: 'John',
+      last_name: 'Doe',
+      email: 'john@example.com',
+      is_email_verified: true,
+      is_banned: true,
+      ban_reason: 'Abuse',
+      banned_at: '2026-05-01T11:00:00.000Z',
+      created_at: '2026-05-01T10:00:00.000Z',
+      admin_id: null,
+      admin_role: null,
+    });
+    listHelpRequestsByUserId.mockResolvedValue([]);
+    cancelAssignmentsForBannedVolunteer.mockRejectedValue(new Error('cleanup failed'));
+
+    await expect(
+      banUserForAdmin({ userId: 'u1', reason: 'Abuse' }),
+    ).rejects.toThrow('cleanup failed');
+
+    expect(unbanUserById).toHaveBeenCalledWith('u1');
   });
 
   test('getHelpRequestsForAdmin delegates to repository', async () => {

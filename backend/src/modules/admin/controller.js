@@ -164,6 +164,7 @@ async function patchAdminUserBan(req, res) {
     }
 
     const user = await banUserForAdmin({
+      actorUserId: req.user?.userId || null,
       userId,
       reason: parsedReason.value,
     });
@@ -177,6 +178,13 @@ async function patchAdminUserBan(req, res) {
 
     return res.status(200).json({ user });
   } catch (_error) {
+    if (_error && (_error.code === 'SELF_BAN_FORBIDDEN' || _error.code === 'ADMIN_BAN_FORBIDDEN')) {
+      return res.status(403).json({
+        code: _error.code,
+        message: _error.message,
+      });
+    }
+
     return res.status(500).json({
       code: 'INTERNAL_ERROR',
       message: 'Something went wrong',

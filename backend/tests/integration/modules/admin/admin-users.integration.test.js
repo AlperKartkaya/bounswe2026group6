@@ -359,6 +359,61 @@ describe('PATCH /api/admin/users/:userId/ban and /unban', () => {
     expect(response.body.code).toBe('FORBIDDEN');
   });
 
+  test('ban endpoint blocks self-ban attempts by admin users', async () => {
+    await seedUsers();
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .patch('/api/admin/users/admin_user/ban')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'self-check' });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('SELF_BAN_FORBIDDEN');
+
+    const dbResult = await query(
+      `
+        SELECT is_banned
+        FROM users
+        WHERE user_id = 'admin_user'
+      `,
+    );
+
+    expect(dbResult.rows[0].is_banned).toBe(false);
+  });
+
+  test('ban endpoint blocks banning other admin accounts', async () => {
+    await seedUsers();
+    await query(
+      `
+        INSERT INTO admins (admin_id, user_id, role)
+        VALUES ('admin_record_2', 'user_bob', 'MODERATOR')
+      `,
+    );
+
+    const app = createTestApp();
+    const adminToken = buildAuthToken({ userId: 'admin_user', isAdmin: true });
+
+    const response = await request(app)
+      .patch('/api/admin/users/user_bob/ban')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'policy' });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('ADMIN_BAN_FORBIDDEN');
+
+    const dbResult = await query(
+      `
+        SELECT is_banned
+        FROM users
+        WHERE user_id = 'user_bob'
+      `,
+    );
+
+    expect(dbResult.rows[0].is_banned).toBe(false);
+  });
+
   test('ban endpoint updates ban state with optional reason', async () => {
     await seedUsers();
     const app = createTestApp();

@@ -421,7 +421,9 @@ export default function AdminUsersView() {
                                     <td>{user.banReason || "-"}</td>
                                     <td>{formatDateTime(user.createdAt)}</td>
                                     <td>
-                                        {user.isBanned ? (
+                                        {user.isAdmin ? (
+                                            <span className="admin-subtle">Admin account</span>
+                                        ) : user.isBanned ? (
                                             <SecondaryButton
                                                 className="h-9 w-auto px-3"
                                                 onClick={() => void runModerationAction(user, "unban")}

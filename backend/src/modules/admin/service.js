@@ -1,6 +1,7 @@
 const {
   listUsers,
   banUserById,
+  findBanTargetByUserId,
   unbanUserById,
   listHelpRequests,
   listAnnouncements,
@@ -49,15 +50,40 @@ function mapAdminUserRow(row) {
   };
 }
 
-async function banUserForAdmin({ userId, reason = null }) {
+function buildModerationError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+async function banUserForAdmin({ actorUserId = null, userId, reason = null }) {
+  if (actorUserId && actorUserId === userId) {
+    throw buildModerationError('SELF_BAN_FORBIDDEN', 'Admins cannot ban their own account.');
+  }
+
+  const target = await findBanTargetByUserId(userId);
+  if (!target) {
+    return null;
+  }
+
+  if (target.is_admin) {
+    throw buildModerationError('ADMIN_BAN_FORBIDDEN', 'Admin accounts cannot be banned.');
+  }
+
   const updated = await banUserById(userId, reason);
 
   if (!updated) {
     return null;
   }
 
-  await cancelOpenRequestsForBannedRequester(userId);
-  await cancelAssignmentsForBannedVolunteer(userId);
+  try {
+    await cancelOpenRequestsForBannedRequester(userId);
+    await cancelAssignmentsForBannedVolunteer(userId);
+  } catch (error) {
+    // Keep moderation state consistent when downstream cleanup fails.
+    await unbanUserById(userId);
+    throw error;
+  }
 
   return mapAdminUserRow(updated);
 }

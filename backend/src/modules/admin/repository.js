@@ -123,6 +123,24 @@ async function banUserById(userId, reason = null) {
   return result.rows[0] || null;
 }
 
+async function findBanTargetByUserId(userId) {
+  const result = await query(
+    `
+      SELECT
+        u.user_id,
+        (a.admin_id IS NOT NULL) AS is_admin
+      FROM users u
+      LEFT JOIN admins a ON a.user_id = u.user_id
+      WHERE u.user_id = $1
+        AND u.is_deleted = FALSE
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return result.rows[0] || null;
+}
+
 async function unbanUserById(userId) {
   const result = await query(
     `
@@ -962,6 +980,7 @@ async function getDeploymentMonitoring({
 module.exports = {
   listUsers,
   banUserById,
+  findBanTargetByUserId,
   unbanUserById,
   listHelpRequests,
   listAnnouncements,

@@ -99,6 +99,10 @@ test('admin can open Users tab and see registered users with required columns', 
 
   const unverifiedRow = page.getByRole('row', { name: new RegExp(unverifiedEmail) });
   await expect(unverifiedRow.getByText('Unverified', { exact: true })).toBeVisible();
+
+  // Admin accounts are intentionally not bannable from the table.
+  const adminRow = page.getByRole('row', { name: new RegExp(adminEmail) });
+  await expect(adminRow.getByRole('button', { name: 'Ban' })).toHaveCount(0);
 });
 
 test('admin can filter users by email and verification status', async ({ page }) => {

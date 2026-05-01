@@ -90,7 +90,7 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-function optionalAuth(req, _res, next) {
+async function optionalAuth(req, _res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -102,12 +102,29 @@ function optionalAuth(req, _res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
 
-    req.user = {
+    if (!decoded || typeof decoded.userId !== 'string' || decoded.userId.trim() === '') {
+      return next();
+    }
+
+    const userState = await findUserAuthStateById(decoded.userId);
+    if (!userState || userState.is_deleted || userState.is_banned) {
+      return next();
+    }
+
+    const adminRecord = await findAdminByUserId(decoded.userId);
+
+    const optionalUser = {
       userId: decoded.userId,
-      email: decoded.email,
-      isAdmin: decoded.isAdmin,
-      adminRole: decoded.adminRole,
+      email: userState.email || decoded.email,
+      isAdmin: Boolean(adminRecord),
+      adminRole: adminRecord ? adminRecord.role : null,
     };
+
+    if (adminRecord) {
+      optionalUser.adminId = adminRecord.admin_id;
+    }
+
+    req.user = optionalUser;
   } catch (_error) {
     // Token is invalid/expired — proceed as guest
   }
