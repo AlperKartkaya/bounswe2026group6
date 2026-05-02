@@ -19,13 +19,44 @@ function pickAllowed(body, allowedKeys) {
   );
 }
 
-function toIsoDateString(value) {
-  const parsedMs = Date.parse(value);
-  if (Number.isNaN(parsedMs)) {
+const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function isLeapYear(year) {
+  if (year % 400 === 0) {
+    return true;
+  }
+
+  if (year % 100 === 0) {
+    return false;
+  }
+
+  return year % 4 === 0;
+}
+
+function parseStrictIsoDate(value) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  const match = isoDatePattern.exec(normalized);
+
+  if (!match) {
     return null;
   }
 
-  return new Date(parsedMs).toISOString().slice(0, 10);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  if (month < 1 || month > 12) {
+    return null;
+  }
+
+  const daysByMonth = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const maxDay = daysByMonth[month - 1];
+
+  if (day < 1 || day > maxDay) {
+    return null;
+  }
+
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 function calculateAgeFromDateOfBirth(isoDate) {
@@ -99,9 +130,9 @@ function validatePhysicalPatch(body) {
     }
 
     if (typeof data.dateOfBirth === 'string') {
-      const normalizedDate = toIsoDateString(data.dateOfBirth.trim());
+      const normalizedDate = parseStrictIsoDate(data.dateOfBirth);
       if (!normalizedDate) {
-        return { ok: false, code: 'VALIDATION_ERROR', message: 'dateOfBirth must be a valid date string' };
+        return { ok: false, code: 'VALIDATION_ERROR', message: 'dateOfBirth must be a valid date in YYYY-MM-DD format' };
       }
 
       const todayIso = new Date().toISOString().slice(0, 10);

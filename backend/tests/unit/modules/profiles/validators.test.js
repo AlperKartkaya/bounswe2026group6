@@ -50,6 +50,20 @@ describe('profiles validators', () => {
 			expect(result.message).toBe('dateOfBirth cannot be in the future');
 		});
 
+		test('rejects invalid calendar day in dateOfBirth', () => {
+			const result = validatePhysicalPatch({ dateOfBirth: '2024-02-30' });
+
+			expect(result.ok).toBe(false);
+			expect(result.message).toBe('dateOfBirth must be a valid date in YYYY-MM-DD format');
+		});
+
+		test('rejects non-ISO dateOfBirth format', () => {
+			const result = validatePhysicalPatch({ dateOfBirth: '15-05-2000' });
+
+			expect(result.ok).toBe(false);
+			expect(result.message).toBe('dateOfBirth must be a valid date in YYYY-MM-DD format');
+		});
+
 		test('rejects negative age', () => {
 			const result = validatePhysicalPatch({ age: -1 });
 

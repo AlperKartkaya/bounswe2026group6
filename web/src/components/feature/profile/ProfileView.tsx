@@ -18,6 +18,7 @@ import {
     StreetAddressInput,
 } from "@/components/feature/location";
 import { bloodTypeOptions } from "@/lib/bloodTypes";
+import { countryCodeOptions } from "@/lib/countryCodes";
 import { expertiseOptions, professionOptions } from "@/lib/profileOptions";
 import { clearAccessToken, fetchCurrentUser, getAccessToken } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
@@ -38,6 +39,7 @@ import {
     fetchMyProfile,
     mapBackendProfileToEditableProfile,
     parseListField,
+    patchMyProfile,
     patchMyHealth,
     patchMyLocation,
     patchMyPhysical,
@@ -455,6 +457,20 @@ export default function ProfileView() {
             return;
         }
 
+        const normalizedFirstName = profile.firstName.trim();
+        const normalizedLastName = profile.lastName.trim();
+        const normalizedPhone = profile.phone.trim().replace(/\D/g, "");
+
+        if (!normalizedFirstName) {
+            setError("Please enter your first name.");
+            return;
+        }
+
+        if (!normalizedLastName) {
+            setError("Please enter your last name.");
+            return;
+        }
+
         const expertiseAreas = profile.expertise.filter((area) =>
             expertiseOptions.includes(area)
         );
@@ -488,6 +504,14 @@ export default function ProfileView() {
             setSaving(true);
             setError("");
             setInfo("");
+
+            await patchMyProfile(token, {
+                firstName: normalizedFirstName,
+                lastName: normalizedLastName,
+                phoneNumber: normalizedPhone
+                    ? `${(profile.countryCode || "").trim()}${normalizedPhone}`
+                    : null,
+            });
 
             const saveCountryKey = findCountryKeyByLabel(locationTree, profile.country);
             const saveCityKey = findCityKeyByLabel(
@@ -717,19 +741,70 @@ export default function ProfileView() {
                         Your contact details are used for account access and emergency
                         communication.
                     </p>
-                    <div className="flex flex-col gap-3 text-sm">
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Email</span>
-                            <span>{profile.email || "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Phone</span>
-                            <span>
-                                {[profile.countryCode, profile.phone]
-                                    .filter(Boolean)
-                                    .join(" ") || "-"}
-                            </span>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <TextInput
+                            id="firstName"
+                            label="First Name"
+                            value={profile.firstName}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? { ...currentProfile, firstName: e.target.value }
+                                        : currentProfile
+                                )
+                            }
+                        />
+                        <TextInput
+                            id="lastName"
+                            label="Last Name"
+                            value={profile.lastName}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? { ...currentProfile, lastName: e.target.value }
+                                        : currentProfile
+                                )
+                            }
+                        />
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-[120px_1fr] gap-3">
+                        <SelectInput
+                            id="profile-country-code"
+                            label="Code"
+                            value={profile.countryCode}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? { ...currentProfile, countryCode: e.target.value }
+                                        : currentProfile
+                                )
+                            }
+                            options={countryCodeOptions}
+                        />
+
+                        <TextInput
+                            id="phone"
+                            label="Phone Number"
+                            type="tel"
+                            inputMode="numeric"
+                            value={profile.phone}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? {
+                                            ...currentProfile,
+                                            phone: e.target.value.replace(/\D/g, ""),
+                                        }
+                                        : currentProfile
+                                )
+                            }
+                        />
+                    </div>
+
+                    <div className="mt-4 flex justify-between text-sm">
+                        <span className="text-gray-500">Email</span>
+                        <span>{profile.email || "-"}</span>
                     </div>
                 </SectionCard>
 
