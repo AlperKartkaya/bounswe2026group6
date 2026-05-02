@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -23,9 +24,14 @@ import com.neph.features.auth.data.AuthSessionStore
 import com.neph.features.availability.data.AvailabilityAccessPolicy
 import com.neph.features.availability.data.AvailabilityRepository
 import com.neph.features.availability.presentation.AvailableToHelpCard
+import com.neph.features.profile.data.DeviceLocationProvider
 import com.neph.features.requesthelp.data.RequestHelpRepository
+import com.neph.features.safetystatus.data.SafetyStatusRepository
 import com.neph.navigation.Routes
 import com.neph.ui.components.buttons.PrimaryButton
+import com.neph.ui.components.buttons.SecondaryButton
+import com.neph.ui.components.display.SectionCard
+import com.neph.ui.components.display.SectionHeader
 import com.neph.ui.layout.AppDrawerScaffold
 import com.neph.ui.theme.LocalNephSpacing
 import com.neph.ui.theme.NephTheme
@@ -47,6 +53,7 @@ fun HomeScreen(
 ) {
     val spacing = LocalNephSpacing.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val sessionToken = AuthSessionStore.getAccessToken()
 
     val availabilityState by AvailabilityRepository.observeAvailabilityState()
@@ -56,6 +63,9 @@ fun HomeScreen(
     var availabilityInfo by remember { mutableStateOf("") }
     var requestHelpLoading by remember { mutableStateOf(false) }
     var requestHelpError by remember { mutableStateOf("") }
+    var markSafeLoading by remember { mutableStateOf(false) }
+    var emergencyInfo by remember { mutableStateOf("") }
+    var emergencyError by remember { mutableStateOf("") }
 
     fun handleAvailabilityChange(nextValue: Boolean) {
         availabilityError = ""
@@ -96,6 +106,8 @@ fun HomeScreen(
         availabilityError = ""
         availabilityInfo = ""
         requestHelpError = ""
+        emergencyError = ""
+        emergencyInfo = ""
 
         if (!isAuthenticated || sessionToken.isNullOrBlank()) {
             onRequestHelp()
@@ -123,6 +135,53 @@ fun HomeScreen(
                 requestHelpError = "We could not verify your current help request status. Please try again."
             } finally {
                 requestHelpLoading = false
+            }
+        }
+    }
+
+    fun handleMarkSafe() {
+        availabilityError = ""
+        availabilityInfo = ""
+        requestHelpError = ""
+        emergencyError = ""
+        emergencyInfo = ""
+
+        if (!isAuthenticated || sessionToken.isNullOrBlank()) {
+            emergencyError = "Please log in before marking yourself safe."
+            onNavigateToLogin()
+            return
+        }
+
+        markSafeLoading = true
+        scope.launch {
+            try {
+                val locationAttempt = DeviceLocationProvider.captureCurrentLocationForSharing(
+                    context = context,
+                    sharingEnabled = true
+                )
+                SafetyStatusRepository.markSafe(
+                    token = sessionToken,
+                    location = locationAttempt.location
+                )
+                emergencyInfo = if (locationAttempt.location != null) {
+                    "You are marked safe. Your current location was shared with your safety status."
+                } else {
+                    "You are marked safe. Location was not shared because permission or location was unavailable."
+                }
+            } catch (error: ApiException) {
+                if (error.status == 401) {
+                    AuthRepository.logout()
+                    emergencyError = "Your session expired. Please log in again before marking yourself safe."
+                    onNavigateToLogin()
+                } else {
+                    emergencyError = error.message.ifBlank { "Could not mark you safe. Please try again." }
+                }
+            } catch (cancellationException: CancellationException) {
+                throw cancellationException
+            } catch (_: Exception) {
+                emergencyError = "Could not mark you safe. Please try again."
+            } finally {
+                markSafeLoading = false
             }
         }
     }
@@ -164,12 +223,39 @@ fun HomeScreen(
                 )
             }
 
-            PrimaryButton(
-                text = "Request Help",
-                onClick = ::handleRequestHelp,
-                loading = requestHelpLoading,
-                enabled = !availabilityLoading
-            )
+            SectionCard {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(spacing.sm)
+                ) {
+                    SectionHeader(
+                        title = "Emergency Mode",
+                        subtitle = "Choose the critical action first."
+                    )
+
+                    PrimaryButton(
+                        text = "I need help",
+                        onClick = ::handleRequestHelp,
+                        loading = requestHelpLoading,
+                        enabled = !availabilityLoading && !markSafeLoading
+                    )
+
+                    SecondaryButton(
+                        text = "I am safe",
+                        onClick = ::handleMarkSafe,
+                        enabled = !availabilityLoading && !requestHelpLoading && !markSafeLoading
+                    )
+
+                    if (markSafeLoading) {
+                        Text(
+                            text = "Saving your safety status...",
+                            modifier = Modifier.fillMaxWidth(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
 
             if (requestHelpError.isNotBlank()) {
                 Text(
@@ -181,8 +267,28 @@ fun HomeScreen(
                 )
             }
 
+            if (emergencyError.isNotBlank()) {
+                Text(
+                    text = emergencyError,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            if (emergencyInfo.isNotBlank()) {
+                Text(
+                    text = emergencyInfo,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
+                )
+            }
+
             Text(
-                text = "Create an emergency help request and share your situation.",
+                text = "Use Emergency Mode to request help or check in safe from your phone.",
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -416,10 +416,13 @@ private fun CrisisRequestMapPanel(
                     }
                 }
         ) {
+            val mapWidth = maxWidth
+            val mapHeight = maxHeight
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(maxHeight)
+                    .height(mapHeight)
                     .graphicsLayer {
                         scaleX = zoom
                         scaleY = zoom
@@ -429,47 +432,50 @@ private fun CrisisRequestMapPanel(
             ) {
                 MapRoad(
                     modifier = Modifier
-                        .offset { IntOffset(0, (maxHeight * 0.22f).roundToPx()) }
+                        .offset { IntOffset(0, (mapHeight * 0.22f).roundToPx()) }
                         .fillMaxWidth()
                         .height(12.dp)
                 )
                 MapRoad(
                     modifier = Modifier
-                        .offset { IntOffset(0, (maxHeight * 0.58f).roundToPx()) }
+                        .offset { IntOffset(0, (mapHeight * 0.58f).roundToPx()) }
                         .fillMaxWidth()
                         .height(9.dp)
                 )
                 MapRoad(
                     modifier = Modifier
-                        .offset { IntOffset((maxWidth * 0.30f).roundToPx(), 0) }
-                        .size(11.dp, maxHeight)
+                        .offset { IntOffset((mapWidth * 0.30f).roundToPx(), 0) }
+                        .size(11.dp, mapHeight)
                 )
                 MapRoad(
                     modifier = Modifier
-                        .offset { IntOffset((maxWidth * 0.70f).roundToPx(), 0) }
-                        .size(8.dp, maxHeight)
+                        .offset { IntOffset((mapWidth * 0.70f).roundToPx(), 0) }
+                        .size(8.dp, mapHeight)
                 )
                 MapNeighborhoodPatch(
                     modifier = Modifier
-                        .offset { IntOffset((maxWidth * 0.08f).roundToPx(), (maxHeight * 0.10f).roundToPx()) }
-                        .size(width = maxWidth * 0.24f, height = maxHeight * 0.18f)
+                        .offset { IntOffset((mapWidth * 0.08f).roundToPx(), (mapHeight * 0.10f).roundToPx()) }
+                        .size(width = mapWidth * 0.24f, height = mapHeight * 0.18f)
                 )
                 MapNeighborhoodPatch(
                     modifier = Modifier
-                        .offset { IntOffset((maxWidth * 0.58f).roundToPx(), (maxHeight * 0.68f).roundToPx()) }
-                        .size(width = maxWidth * 0.28f, height = maxHeight * 0.16f)
+                        .offset { IntOffset((mapWidth * 0.58f).roundToPx(), (mapHeight * 0.68f).roundToPx()) }
+                        .size(width = mapWidth * 0.28f, height = mapHeight * 0.16f)
                 )
 
                 requests.forEach { item ->
                     val xFraction = ((item.longitude - minLongitude) / lonSpan).coerceIn(0.08, 0.92)
                     val yFraction = (1.0 - ((item.latitude - minLatitude) / latSpan)).coerceIn(0.10, 0.88)
-                    val x = (maxWidth * xFraction.toFloat()).roundToPx() - 21
-                    val y = (maxHeight * yFraction.toFloat()).roundToPx() - 42
 
                     MapMarker(
                         item = item,
                         selected = item.requestId == selectedRequestId,
-                        modifier = Modifier.offset { IntOffset(x, y) },
+                        modifier = Modifier.offset {
+                            IntOffset(
+                                (mapWidth * xFraction.toFloat()).roundToPx() - 21,
+                                (mapHeight * yFraction.toFloat()).roundToPx() - 42
+                            )
+                        },
                         onClick = { onSelectRequest(item.requestId) }
                     )
                 }
