@@ -18,6 +18,7 @@ import {
     StreetAddressInput,
 } from "@/components/feature/location";
 import { bloodTypeOptions } from "@/lib/bloodTypes";
+import { countryCodeOptions } from "@/lib/countryCodes";
 import { expertiseOptions, professionOptions } from "@/lib/profileOptions";
 import { clearAccessToken, fetchCurrentUser, getAccessToken } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
@@ -38,6 +39,7 @@ import {
     fetchMyProfile,
     mapBackendProfileToEditableProfile,
     parseListField,
+    patchMyProfile,
     patchMyHealth,
     patchMyLocation,
     patchMyPhysical,
@@ -46,16 +48,8 @@ import {
     validateExpertiseAreas,
     putMyExpertiseAreas,
 } from "@/lib/profile";
-type UploadedFile = { name: string; data: string };
-type UploadField = "chronicDiseasesFiles" | "allergiesFiles";
 type EmptyStateAction = "login" | "complete-profile" | null;
-
-type ProfileData = EditableProfileData & {
-    chronicDiseasesFiles: UploadedFile[];
-    chronicDiseasesVerified: boolean;
-    allergiesFiles: UploadedFile[];
-    allergiesVerified: boolean;
-};
+type ProfileData = EditableProfileData;
 
 const FRESH_DEVICE_CAPTURE_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -120,10 +114,6 @@ function toProfileData(
         district: parsedAddress.district,
         neighborhood: parsedAddress.neighborhood,
         extraAddress: parsedAddress.extraAddress,
-        chronicDiseasesFiles: [],
-        chronicDiseasesVerified: false,
-        allergiesFiles: [],
-        allergiesVerified: false,
     };
 }
 
@@ -134,8 +124,6 @@ export default function ProfileView() {
     const [locationTreeError, setLocationTreeError] = React.useState("");
     const [locationPickerValue, setLocationPickerValue] =
         React.useState<LocationPickerValue | null>(null);
-    const [uploading, setUploading] = React.useState<string | null>(null);
-    const [progress] = React.useState<number>(100);
     const [loading, setLoading] = React.useState(true);
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState("");
@@ -207,11 +195,6 @@ export default function ProfileView() {
                 return currentProfile
                     ? {
                         ...refreshedProfile,
-                        chronicDiseasesFiles: currentProfile.chronicDiseasesFiles,
-                        chronicDiseasesVerified:
-                            currentProfile.chronicDiseasesVerified,
-                        allergiesFiles: currentProfile.allergiesFiles,
-                        allergiesVerified: currentProfile.allergiesVerified,
                     }
                     : refreshedProfile;
             });
@@ -474,7 +457,23 @@ export default function ProfileView() {
             return;
         }
 
-        const expertiseAreas = profile.expertise;
+        const normalizedFirstName = profile.firstName.trim();
+        const normalizedLastName = profile.lastName.trim();
+        const normalizedPhone = profile.phone.trim().replace(/\D/g, "");
+
+        if (!normalizedFirstName) {
+            setError("Please enter your first name.");
+            return;
+        }
+
+        if (!normalizedLastName) {
+            setError("Please enter your last name.");
+            return;
+        }
+
+        const expertiseAreas = profile.expertise.filter((area) =>
+            expertiseOptions.includes(area)
+        );
         const expertiseValidationError = validateExpertiseAreas(expertiseAreas);
 
         if (expertiseValidationError) {
@@ -505,6 +504,14 @@ export default function ProfileView() {
             setSaving(true);
             setError("");
             setInfo("");
+
+            await patchMyProfile(token, {
+                firstName: normalizedFirstName,
+                lastName: normalizedLastName,
+                phoneNumber: normalizedPhone
+                    ? `${(profile.countryCode || "").trim()}${normalizedPhone}`
+                    : null,
+            });
 
             const saveCountryKey = findCountryKeyByLabel(locationTree, profile.country);
             const saveCityKey = findCityKeyByLabel(
@@ -559,7 +566,7 @@ export default function ProfileView() {
                 }) || null;
 
             await patchMyPhysical(token, {
-                age: profile.age ? Number(profile.age) : undefined,
+                dateOfBirth: profile.dateOfBirth || null,
                 gender: profile.gender || null,
                 height: profile.height ? Number(profile.height) : undefined,
                 weight: profile.weight ? Number(profile.weight) : undefined,
@@ -638,58 +645,6 @@ export default function ProfileView() {
         } finally {
             setSaving(false);
         }
-    };
-
-    const handleFileUpload = (field: UploadField, file: File) => {
-        setUploading(field);
-
-        setProfile((prev) => {
-            if (!prev) {
-                return prev;
-            }
-
-            if (field === "chronicDiseasesFiles") {
-                return {
-                    ...prev,
-                    chronicDiseasesFiles: [
-                        ...prev.chronicDiseasesFiles,
-                        { name: file.name, data: "" },
-                    ],
-                    chronicDiseasesVerified: false,
-                };
-            }
-
-            return {
-                ...prev,
-                allergiesFiles: [...prev.allergiesFiles, { name: file.name, data: "" }],
-                allergiesVerified: false,
-            };
-        });
-
-        setUploading(null);
-        setInfo(
-            "Document uploads are not connected yet because the backend upload endpoint is not available."
-        );
-    };
-
-    const removeFile = (field: UploadField, index: number) => {
-        setProfile((prev) => {
-            if (!prev) {
-                return prev;
-            }
-
-            if (field === "chronicDiseasesFiles") {
-                const updated = [...prev.chronicDiseasesFiles];
-                updated.splice(index, 1);
-
-                return { ...prev, chronicDiseasesFiles: updated };
-            }
-
-            const updated = [...prev.allergiesFiles];
-            updated.splice(index, 1);
-
-            return { ...prev, allergiesFiles: updated };
-        });
     };
 
     if (loading) {
@@ -772,7 +727,9 @@ export default function ProfileView() {
             <div className="flex w-64 flex-col items-center gap-4">
                 <Avatar size="lg" />
                 <div className="text-center">
-                    <h2 className="text-lg font-semibold">{profile.fullName || "User"}</h2>
+                    <h2 className="text-lg font-semibold">
+                        {[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "User"}
+                    </h2>
                     <p className="text-sm text-gray-500">{profile.email || "No email"}</p>
                 </div>
             </div>
@@ -784,19 +741,70 @@ export default function ProfileView() {
                         Your contact details are used for account access and emergency
                         communication.
                     </p>
-                    <div className="flex flex-col gap-3 text-sm">
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Email</span>
-                            <span>{profile.email || "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Phone</span>
-                            <span>
-                                {[profile.countryCode, profile.phone]
-                                    .filter(Boolean)
-                                    .join(" ") || "-"}
-                            </span>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <TextInput
+                            id="firstName"
+                            label="First Name"
+                            value={profile.firstName}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? { ...currentProfile, firstName: e.target.value }
+                                        : currentProfile
+                                )
+                            }
+                        />
+                        <TextInput
+                            id="lastName"
+                            label="Last Name"
+                            value={profile.lastName}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? { ...currentProfile, lastName: e.target.value }
+                                        : currentProfile
+                                )
+                            }
+                        />
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-[120px_1fr] gap-3">
+                        <SelectInput
+                            id="profile-country-code"
+                            label="Code"
+                            value={profile.countryCode}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? { ...currentProfile, countryCode: e.target.value }
+                                        : currentProfile
+                                )
+                            }
+                            options={countryCodeOptions}
+                        />
+
+                        <TextInput
+                            id="phone"
+                            label="Phone Number"
+                            type="tel"
+                            inputMode="numeric"
+                            value={profile.phone}
+                            onChange={(e) =>
+                                setProfile((currentProfile) =>
+                                    currentProfile
+                                        ? {
+                                            ...currentProfile,
+                                            phone: e.target.value.replace(/\D/g, ""),
+                                        }
+                                        : currentProfile
+                                )
+                            }
+                        />
+                    </div>
+
+                    <div className="mt-4 flex justify-between text-sm">
+                        <span className="text-gray-500">Email</span>
+                        <span>{profile.email || "-"}</span>
                     </div>
                 </SectionCard>
 
@@ -851,17 +859,17 @@ export default function ProfileView() {
                         />
                         <div>
                             <TextInput
-                                id="age"
-                                label="Age"
-                                type="number"
-                                inputMode="numeric"
-                                value={profile.age}
+                                id="dateOfBirth"
+                                label="Date of Birth"
+                                type="date"
+                                max={new Date().toISOString().slice(0, 10)}
+                                value={profile.dateOfBirth}
                                 onChange={(e) =>
                                     setProfile((currentProfile) =>
                                         currentProfile
                                             ? {
                                                 ...currentProfile,
-                                                age: e.target.value.replace(/\D/g, "").slice(0, 3),
+                                                dateOfBirth: e.target.value,
                                             }
                                             : currentProfile
                                     )
@@ -960,30 +968,6 @@ export default function ProfileView() {
                         <div className="mt-4">
                             <div className="mb-1 flex justify-between">
                                 <span className="whitespace-nowrap">Chronic Diseases</span>
-                                <div className="flex items-center gap-2 text-xs">
-                                    <p className="text-xs text-gray-400">
-                                        Upload is shown in the UI, but backend document storage is
-                                        not available yet.
-                                    </p>
-                                    <input
-                                        type="file"
-                                        id="chronic-upload"
-                                        className="hidden"
-                                        onChange={(e) =>
-                                            e.target.files?.[0] &&
-                                            handleFileUpload(
-                                                "chronicDiseasesFiles",
-                                                e.target.files[0]
-                                            )
-                                        }
-                                    />
-                                    <label
-                                        htmlFor="chronic-upload"
-                                        className="cursor-pointer text-blue-600"
-                                    >
-                                        Upload
-                                    </label>
-                                </div>
                             </div>
 
                             <TextInput
@@ -1000,62 +984,11 @@ export default function ProfileView() {
                                     )
                                 }
                             />
-
-                            {uploading === "chronicDiseasesFiles" ? (
-                                <div className="mt-2 text-xs">Uploading... {progress}%</div>
-                            ) : null}
-
-                            {profile.chronicDiseasesFiles.map((file, index) => (
-                                <div
-                                    key={`${file.name}-${index}`}
-                                    className="mt-2 flex justify-between text-xs text-gray-600"
-                                >
-                                    <div className="flex flex-col">
-                                        <span>📄 {file.name}</span>
-                                        <span className="mt-1 text-xs text-red-500">
-                                            Pending Verification
-                                        </span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            removeFile("chronicDiseasesFiles", index)
-                                        }
-                                        className="text-red-500"
-                                    >
-                                        Remove
-                                    </button>
-                                </div>
-                            ))}
                         </div>
 
                         <div className="mt-4">
                             <div className="mb-1 flex justify-between">
                                 <span>Allergies</span>
-                                <div className="flex items-center gap-2 text-xs">
-                                    <p className="text-xs text-gray-400">
-                                        Verification is not connected yet because the backend upload
-                                        flow is still missing.
-                                    </p>
-                                    <input
-                                        type="file"
-                                        id="allergy-upload"
-                                        className="hidden"
-                                        onChange={(e) =>
-                                            e.target.files?.[0] &&
-                                            handleFileUpload(
-                                                "allergiesFiles",
-                                                e.target.files[0]
-                                            )
-                                        }
-                                    />
-                                    <label
-                                        htmlFor="allergy-upload"
-                                        className="cursor-pointer text-blue-600"
-                                    >
-                                        Upload
-                                    </label>
-                                </div>
                             </div>
 
                             <TextInput
@@ -1069,31 +1002,6 @@ export default function ProfileView() {
                                     )
                                 }
                             />
-
-                            {uploading === "allergiesFiles" ? (
-                                <div className="mt-2 text-xs">Uploading... {progress}%</div>
-                            ) : null}
-
-                            {profile.allergiesFiles.map((file, index) => (
-                                <div
-                                    key={`${file.name}-${index}`}
-                                    className="mt-2 flex justify-between text-xs text-gray-600"
-                                >
-                                    <div className="flex flex-col">
-                                        <span>📄 {file.name}</span>
-                                        <span className="mt-1 text-xs text-red-500">
-                                            Pending Verification
-                                        </span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeFile("allergiesFiles", index)}
-                                        className="text-red-500"
-                                    >
-                                        Remove
-                                    </button>
-                                </div>
-                            ))}
                         </div>
                     </div>
                 </SectionCard>
