@@ -27,15 +27,18 @@ import com.neph.features.profile.data.LocationData
 import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.ProfileData
 import com.neph.features.profile.data.ProfileRepository
+import com.neph.features.profile.data.ProfileRepository.LocationSharingInitializationRequiredException
 import com.neph.features.profile.data.bloodTypeOptions
+import com.neph.features.profile.data.calculateAgeFromDateOfBirth
 import com.neph.features.profile.data.combinePhoneNumber
+import com.neph.features.profile.data.composeFullName
 import com.neph.features.profile.data.expertiseOptionsFor
 import com.neph.features.profile.data.locationData
+import com.neph.features.profile.data.normalizeDateOfBirth
 import com.neph.features.profile.data.normalizePhoneParts
 import com.neph.features.profile.data.parseListField
 import com.neph.features.profile.data.professionOptionsFor
 import com.neph.features.profile.data.sanitizeDecimalInput
-import com.neph.features.profile.data.splitFullName
 import com.neph.features.profile.data.toEditableString
 import com.neph.features.profile.presentation.components.GenderSelector
 import com.neph.features.profile.presentation.components.LocationSelector
@@ -54,6 +57,9 @@ import com.neph.ui.map.SharedCoordinatesMapAction
 import com.neph.ui.theme.LocalNephSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun EditProfileScreen(
@@ -61,6 +67,17 @@ fun EditProfileScreen(
     onNavigateBack: () -> Unit
 ) {
     var profile by remember { mutableStateOf(ProfileRepository.getProfile()) }
+    val initialFirstName = remember(profile.firstName, profile.fullName) {
+        profile.firstName?.trim().orEmpty().ifBlank {
+            profile.fullName.orEmpty().trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        }
+    }
+    val initialLastName = remember(profile.lastName, profile.fullName) {
+        profile.lastName?.trim().orEmpty().ifBlank {
+            val parts = profile.fullName.orEmpty().trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+            parts.drop(1).joinToString(" ")
+        }
+    }
     val initialPhoneParts = remember { normalizePhoneParts(profile.phone) }
 
     var loading by rememberSaveable { mutableStateOf(false) }
@@ -70,9 +87,11 @@ fun EditProfileScreen(
 
     var countryCode by rememberSaveable { mutableStateOf(initialPhoneParts.countryCode) }
     var phone by rememberSaveable { mutableStateOf(initialPhoneParts.phone) }
+    var firstNameText by rememberSaveable { mutableStateOf(initialFirstName) }
+    var lastNameText by rememberSaveable { mutableStateOf(initialLastName) }
     var heightText by rememberSaveable { mutableStateOf(profile.height.toEditableString()) }
     var weightText by rememberSaveable { mutableStateOf(profile.weight.toEditableString()) }
-    var ageText by rememberSaveable { mutableStateOf(profile.age?.toString().orEmpty()) }
+    var dateOfBirthText by rememberSaveable { mutableStateOf(profile.dateOfBirth.orEmpty()) }
     var availableLocationData by remember { mutableStateOf<LocationData>(locationData) }
     var locationLoading by remember { mutableStateOf(true) }
     var locationInfo by rememberSaveable { mutableStateOf("") }
@@ -102,9 +121,11 @@ fun EditProfileScreen(
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
+            firstNameText = profile.firstName.orEmpty()
+            lastNameText = profile.lastName.orEmpty()
             heightText = profile.height.toEditableString()
             weightText = profile.weight.toEditableString()
-            ageText = profile.age?.toString().orEmpty()
+            dateOfBirthText = profile.dateOfBirth.orEmpty()
         } catch (cancellationException: CancellationException) {
             throw cancellationException
         } catch (_: ApiException) {
@@ -114,9 +135,11 @@ fun EditProfileScreen(
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
+            firstNameText = profile.firstName.orEmpty()
+            lastNameText = profile.lastName.orEmpty()
             heightText = profile.height.toEditableString()
             weightText = profile.weight.toEditableString()
-            ageText = profile.age?.toString().orEmpty()
+            dateOfBirthText = profile.dateOfBirth.orEmpty()
         } catch (_: Exception) {
             profile = ProfileRepository.getProfile()
             syncedSharedLatitude = profile.sharedLatitude
@@ -124,9 +147,11 @@ fun EditProfileScreen(
             val phoneParts = normalizePhoneParts(profile.phone)
             countryCode = phoneParts.countryCode
             phone = phoneParts.phone
+            firstNameText = profile.firstName.orEmpty()
+            lastNameText = profile.lastName.orEmpty()
             heightText = profile.height.toEditableString()
             weightText = profile.weight.toEditableString()
-            ageText = profile.age?.toString().orEmpty()
+            dateOfBirthText = profile.dateOfBirth.orEmpty()
             info = "Could not refresh your profile. Showing saved information."
         }
     }
@@ -149,9 +174,18 @@ fun EditProfileScreen(
         info = ""
         mapActionInfo = ""
 
-        val (firstName, lastName) = splitFullName(profile.fullName.orEmpty())
-        if (firstName.isBlank() || lastName.isBlank()) {
+        val normalizedFirstName = firstNameText.trim()
+        val normalizedLastName = lastNameText.trim()
+        val normalizedDateOfBirth = normalizeDateOfBirth(dateOfBirthText)
+        val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+
+        if (normalizedFirstName.isBlank() || normalizedLastName.isBlank()) {
             error = "Please enter both first and last name."
+            return
+        }
+
+        if (normalizedDateOfBirth == null || normalizedDateOfBirth > todayIso) {
+            error = "Please enter a valid date of birth in YYYY-MM-DD format."
             return
         }
 
@@ -162,14 +196,14 @@ fun EditProfileScreen(
 
         val heightFloat = heightText.toFloatOrNull()
         val weightFloat = weightText.toFloatOrNull()
-        val ageInt = ageText.toIntOrNull()
+        val ageInt = calculateAgeFromDateOfBirth(normalizedDateOfBirth)
         if (heightFloat == null || heightFloat <= 0f || weightFloat == null || weightFloat <= 0f) {
             error = "Height and weight must be valid positive numbers."
             return
         }
 
-        if (ageInt == null || ageInt <= 0) {
-            error = "Age must be a valid positive number."
+        if (ageInt == null) {
+            error = "Please enter a valid date of birth in YYYY-MM-DD format."
             return
         }
 
@@ -182,9 +216,13 @@ fun EditProfileScreen(
         scope.launch {
             try {
                 val profileToSync = profile.copy(
+                    firstName = normalizedFirstName,
+                    lastName = normalizedLastName,
+                    fullName = composeFullName(normalizedFirstName, normalizedLastName),
                     phone = combinePhoneNumber(countryCode, phone),
                     height = heightFloat,
                     weight = weightFloat,
+                    dateOfBirth = normalizedDateOfBirth,
                     age = ageInt
                 )
                 val locationShareAttempt = DeviceLocationProvider.captureCurrentLocationForSharing(
@@ -208,9 +246,11 @@ fun EditProfileScreen(
                 val phoneParts = normalizePhoneParts(profile.phone)
                 countryCode = phoneParts.countryCode
                 phone = phoneParts.phone
+                firstNameText = profile.firstName.orEmpty()
+                lastNameText = profile.lastName.orEmpty()
                 heightText = profile.height.toEditableString()
                 weightText = profile.weight.toEditableString()
-                ageText = profile.age?.toString().orEmpty()
+                dateOfBirthText = profile.dateOfBirth.orEmpty()
                 info = when (locationShareAttempt.warning) {
                     CurrentLocationShareWarning.PERMISSION_DENIED ->
                         "Profile updated successfully. Location permission is denied, so location sharing was turned off and stored coordinates were cleared."
@@ -227,6 +267,8 @@ fun EditProfileScreen(
                     }
                 }
                 onSave(profile)
+            } catch (guardError: LocationSharingInitializationRequiredException) {
+                error = guardError.message ?: "To enable Share Current Location, save a valid current location first."
             } catch (cancellationException: CancellationException) {
                 throw cancellationException
             } catch (errorResponse: ApiException) {
@@ -245,11 +287,21 @@ fun EditProfileScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                     SectionHeader(title = "Account Information")
 
-                    AppTextField(
-                        value = profile.fullName.orEmpty(),
-                        onValueChange = { profile = profile.copy(fullName = it) },
-                        label = "Full Name"
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        AppTextField(
+                            value = firstNameText,
+                            onValueChange = { firstNameText = it },
+                            label = "First Name",
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        AppTextField(
+                            value = lastNameText,
+                            onValueChange = { lastNameText = it },
+                            label = "Last Name",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
                     AppTextField(
                         value = profile.email.orEmpty(),
@@ -307,13 +359,13 @@ fun EditProfileScreen(
                     )
 
                     AppTextField(
-                        value = ageText,
+                        value = dateOfBirthText,
                         onValueChange = {
-                            ageText = it.filter(Char::isDigit).take(3)
+                            dateOfBirthText = it
                         },
-                        label = "Age",
-                        placeholder = "Enter your age",
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        label = "Date of Birth",
+                        placeholder = "YYYY-MM-DD",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                     )
                 }
             }

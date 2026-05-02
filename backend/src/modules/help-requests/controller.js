@@ -6,11 +6,13 @@ const {
   getGuestHelpRequest,
   updateMyHelpRequestStatus,
   updateGuestHelpRequestStatus,
+  listActiveHelpRequestsForVisibility,
 } = require('./service');
 const {
   readUserId,
   validateCreateHelpRequest,
   validateHelpRequestStatusUpdate,
+  validateActiveHelpRequestListQuery,
 } = require('./validators');
 const { env } = require('../../config/env');
 
@@ -167,9 +169,42 @@ async function patchHelpRequestStatus(request, response) {
   }
 }
 
+async function listActiveHelpRequests(request, response) {
+  const { errors, value } = validateActiveHelpRequestListQuery(request.query || {});
+  if (errors.length > 0) {
+    return sendError(response, 400, 'VALIDATION_FAILED', 'Validation failed', errors);
+  }
+
+  try {
+    const isAdmin = Boolean(request.user?.isAdmin);
+    const payload = await listActiveHelpRequestsForVisibility({
+      ...value,
+      isAdmin,
+    });
+
+    return response.status(200).json({
+      requests: payload.items,
+      total: payload.total,
+      pagination: {
+        limit: value.limit,
+        offset: value.offset,
+      },
+      filters: {
+        type: value.typeFilters,
+        status: value.statusFilters,
+        bbox: value.bbox,
+      },
+    });
+  } catch (error) {
+    console.error('helpRequests.listActiveHelpRequests failed', error);
+    return sendError(response, 500, 'INTERNAL_ERROR', 'Unexpected server error');
+  }
+}
+
 module.exports = {
   createHelpRequest,
   listHelpRequests,
   getHelpRequest,
   patchHelpRequestStatus,
+  listActiveHelpRequests,
 };

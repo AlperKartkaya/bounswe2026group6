@@ -31,11 +31,17 @@ fun PrivacySecurityScreen(
             SectionCard {
                 SectionHeader(
                     title = "Privacy & Security",
-                    subtitle = "Temporary placeholder screen."
+                    subtitle = "Configure privacy safely from your profile flow."
                 )
 
                 Text(
-                    text = "Privacy and security controls will be added in a later step.",
+                    text = "To enable Share Current Location, go to Profile, grant location permission, and save a valid current location first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Text(
+                    text = "If there are no saved or fresh coordinates, Android will keep location sharing disabled for safety.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

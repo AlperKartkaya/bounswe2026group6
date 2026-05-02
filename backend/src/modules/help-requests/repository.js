@@ -3,6 +3,13 @@ const crypto = require('crypto');
 const { pool, query } = require('../../db/pool');
 const { deriveOperationalLevels } = require('./operational');
 
+function runQuery(executor, text, params = []) {
+  if (executor && typeof executor.query === 'function') {
+    return executor.query(text, params);
+  }
+  return query(text, params);
+}
+
 function mapStatus(row) {
   if (row.status === 'RESOLVED') {
     return 'RESOLVED';
@@ -397,8 +404,9 @@ async function createHelpRequest(input) {
   }
 }
 
-async function listHelpRequestsByUserId(userId) {
-  const result = await query(
+async function listHelpRequestsByUserId(userId, executor = null) {
+  const result = await runQuery(
+    executor,
     `
       ${buildSelectQuery()}
       WHERE hr.user_id = $1
@@ -426,8 +434,9 @@ async function findHelpRequestById(requestId) {
   return mapHelpRequest(result.rows[0]);
 }
 
-async function findHelpRequestByIdForUser(userId, requestId) {
-  const result = await query(
+async function findHelpRequestByIdForUser(userId, requestId, executor = null) {
+  const result = await runQuery(
+    executor,
     `
       ${buildSelectQuery()}
       WHERE hr.user_id = $1 AND hr.request_id = $2
@@ -500,8 +509,9 @@ async function markHelpRequestAsResolvedByRequestId(requestId) {
   return findHelpRequestById(requestId);
 }
 
-async function markHelpRequestAsCancelled(userId, requestId) {
-  await query(
+async function markHelpRequestAsCancelled(userId, requestId, executor = null) {
+  await runQuery(
+    executor,
     `
       UPDATE help_requests
       SET status = 'CANCELLED',
@@ -512,7 +522,7 @@ async function markHelpRequestAsCancelled(userId, requestId) {
     [userId, requestId],
   );
 
-  return findHelpRequestByIdForUser(userId, requestId);
+  return findHelpRequestByIdForUser(userId, requestId, executor);
 }
 
 async function markHelpRequestAsCancelledByRequestId(requestId) {
@@ -530,6 +540,163 @@ async function markHelpRequestAsCancelledByRequestId(requestId) {
   return findHelpRequestById(requestId);
 }
 
+function roundToPrecision(value, digits) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function mapActiveVisibilityItem(row, { isAdmin = false } = {}) {
+  const derivedOperational = deriveOperationalLevels({
+    affectedPeopleCount: row.affected_people_count,
+    riskFlags: row.risk_flags,
+  });
+  const urgencyLevel = row.urgency_level || derivedOperational.urgencyLevel;
+
+  const latitude = row.latitude == null
+    ? null
+    : isAdmin
+      ? Number(row.latitude)
+      : roundToPrecision(Number(row.latitude), 3);
+  const longitude = row.longitude == null
+    ? null
+    : isAdmin
+      ? Number(row.longitude)
+      : roundToPrecision(Number(row.longitude), 3);
+
+  const location = {
+    latitude,
+    longitude,
+    city: row.city || 'unknown',
+    district: row.district || 'unknown',
+  };
+
+  if (isAdmin) {
+    location.neighborhood = row.neighborhood || 'unknown';
+  }
+
+  return {
+    requestId: row.request_id,
+    type: row.need_type,
+    status: row.status,
+    urgencyLevel,
+    createdAt: row.created_at,
+    assignmentState: row.active_assignment_id ? 'ASSIGNED' : 'UNASSIGNED',
+    location,
+  };
+}
+
+async function listActiveHelpRequestsVisibility({
+  typeFilters = [],
+  statusFilters = ['PENDING', 'ASSIGNED', 'IN_PROGRESS'],
+  bbox = null,
+  limit = 100,
+  offset = 0,
+  isAdmin = false,
+} = {}) {
+  const params = [
+    statusFilters,
+    typeFilters.length > 0 ? typeFilters : null,
+    bbox ? bbox.minLng : null,
+    bbox ? bbox.minLat : null,
+    bbox ? bbox.maxLng : null,
+    bbox ? bbox.maxLat : null,
+    limit,
+    offset,
+  ];
+
+  const [countResult, rowsResult] = await Promise.all([
+    query(
+      `
+        SELECT COUNT(*)::int AS total_count
+        FROM help_requests hr
+        LEFT JOIN LATERAL (
+          SELECT
+            loc.latitude,
+            loc.longitude
+          FROM request_locations loc
+          WHERE loc.request_id = hr.request_id
+          ORDER BY loc.captured_at DESC, loc.location_id DESC
+          LIMIT 1
+        ) rl ON TRUE
+        WHERE hr.status = ANY($1::request_status[])
+          AND ($2::text[] IS NULL OR LOWER(hr.need_type) = ANY($2))
+          AND (
+            $3::double precision IS NULL
+            OR (
+              rl.longitude IS NOT NULL
+              AND rl.latitude IS NOT NULL
+              AND rl.longitude BETWEEN $3::double precision AND $5::double precision
+              AND rl.latitude BETWEEN $4::double precision AND $6::double precision
+            )
+          )
+      `,
+      params.slice(0, 6),
+    ),
+    query(
+      `
+        SELECT
+          hr.request_id,
+          LOWER(COALESCE(NULLIF(TRIM(hr.need_type), ''), 'unknown')) AS need_type,
+          hr.status,
+          hr.urgency_level,
+          hr.affected_people_count,
+          hr.risk_flags,
+          hr.created_at,
+          rl.latitude,
+          rl.longitude,
+          COALESCE(NULLIF(TRIM(rl.city), ''), 'unknown') AS city,
+          COALESCE(NULLIF(TRIM(rl.district), ''), 'unknown') AS district,
+          COALESCE(NULLIF(TRIM(rl.neighborhood), ''), 'unknown') AS neighborhood,
+          aa.assignment_id AS active_assignment_id
+        FROM help_requests hr
+        LEFT JOIN LATERAL (
+          SELECT
+            loc.latitude,
+            loc.longitude,
+            loc.city,
+            loc.district,
+            loc.neighborhood
+          FROM request_locations loc
+          WHERE loc.request_id = hr.request_id
+          ORDER BY loc.captured_at DESC, loc.location_id DESC
+          LIMIT 1
+        ) rl ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT a.assignment_id
+          FROM assignments a
+          WHERE a.request_id = hr.request_id
+            AND a.is_cancelled = FALSE
+          ORDER BY a.assigned_at DESC, a.assignment_id DESC
+          LIMIT 1
+        ) aa ON TRUE
+        WHERE hr.status = ANY($1::request_status[])
+          AND ($2::text[] IS NULL OR LOWER(hr.need_type) = ANY($2))
+          AND (
+            $3::double precision IS NULL
+            OR (
+              rl.longitude IS NOT NULL
+              AND rl.latitude IS NOT NULL
+              AND rl.longitude BETWEEN $3::double precision AND $5::double precision
+              AND rl.latitude BETWEEN $4::double precision AND $6::double precision
+            )
+          )
+        ORDER BY hr.created_at DESC
+        LIMIT $7::int
+        OFFSET $8::int
+      `,
+      params,
+    ),
+  ]);
+
+  return {
+    items: rowsResult.rows.map((row) => mapActiveVisibilityItem(row, { isAdmin })),
+    total: countResult.rows[0]?.total_count || 0,
+  };
+}
+
 module.exports = {
   createHelpRequest,
   listHelpRequestsByUserId,
@@ -541,4 +708,5 @@ module.exports = {
   markHelpRequestAsResolvedByRequestId,
   markHelpRequestAsCancelled,
   markHelpRequestAsCancelledByRequestId,
+  listActiveHelpRequestsVisibility,
 };
