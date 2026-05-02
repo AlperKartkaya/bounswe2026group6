@@ -313,6 +313,33 @@ describe('GET /api/auth/verify-email', () => {
     expect(res.status).toBe(200);
     expect(res.body.message).toBeDefined();
   });
+
+  test('403 - banned user cannot get access token via verify-email', async () => {
+    const app = createTestApp();
+    await request(app).post('/api/auth/signup').send(validUser);
+
+    const userRow = await query(`SELECT user_id FROM users WHERE email = $1`, [validUser.email]);
+    const userId = userRow.rows[0].user_id;
+
+    await query(
+      `UPDATE users SET is_banned = TRUE, ban_reason = 'Abuse', banned_at = NOW() WHERE user_id = $1`,
+      [userId],
+    );
+
+    const token = jwt.sign(
+      { type: 'email-verification', userId, email: validUser.email },
+      process.env.JWT_SECRET || 'dev-secret-123',
+      { expiresIn: '1d' }
+    );
+
+    const res = await request(app)
+      .get('/api/auth/verify-email')
+      .query({ token });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('USER_BANNED');
+    expect(res.body.accessToken).toBeUndefined();
+  });
 });
 
 // ─── POST /api/auth/resend-verification ──────────────────────────────────────

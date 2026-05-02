@@ -207,6 +207,13 @@ describe('verifyUserEmail', () => {
       process.env.JWT_SECRET || 'dev-secret-123'
     );
 
+    findUserById.mockResolvedValue({
+      user_id: 'uuid-1',
+      email: 'test@test.com',
+      is_deleted: false,
+      is_banned: false,
+    });
+
     markEmailVerified.mockResolvedValue({
       user_id: 'uuid-1',
       email: 'test@test.com',
@@ -215,6 +222,23 @@ describe('verifyUserEmail', () => {
 
     const result = await verifyUserEmail(token);
     expect(result.user.isEmailVerified).toBe(true);
+  });
+
+  test('throws USER_BANNED when verifying a banned account', async () => {
+    const token = jwt.sign(
+      { type: 'email-verification', userId: 'uuid-banned', email: 'banned@test.com' },
+      process.env.JWT_SECRET || 'dev-secret-123'
+    );
+
+    findUserById.mockResolvedValue({
+      user_id: 'uuid-banned',
+      email: 'banned@test.com',
+      is_deleted: false,
+      is_banned: true,
+    });
+
+    await expect(verifyUserEmail(token)).rejects.toMatchObject({ code: 'USER_BANNED' });
+    expect(markEmailVerified).not.toHaveBeenCalled();
   });
 });
 

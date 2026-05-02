@@ -3,6 +3,13 @@ const crypto = require('crypto');
 const { pool, query } = require('../../db/pool');
 const { deriveOperationalLevels } = require('./operational');
 
+function runQuery(executor, text, params = []) {
+  if (executor && typeof executor.query === 'function') {
+    return executor.query(text, params);
+  }
+  return query(text, params);
+}
+
 function mapStatus(row) {
   if (row.status === 'RESOLVED') {
     return 'RESOLVED';
@@ -397,8 +404,9 @@ async function createHelpRequest(input) {
   }
 }
 
-async function listHelpRequestsByUserId(userId) {
-  const result = await query(
+async function listHelpRequestsByUserId(userId, executor = null) {
+  const result = await runQuery(
+    executor,
     `
       ${buildSelectQuery()}
       WHERE hr.user_id = $1
@@ -426,8 +434,9 @@ async function findHelpRequestById(requestId) {
   return mapHelpRequest(result.rows[0]);
 }
 
-async function findHelpRequestByIdForUser(userId, requestId) {
-  const result = await query(
+async function findHelpRequestByIdForUser(userId, requestId, executor = null) {
+  const result = await runQuery(
+    executor,
     `
       ${buildSelectQuery()}
       WHERE hr.user_id = $1 AND hr.request_id = $2
@@ -500,8 +509,9 @@ async function markHelpRequestAsResolvedByRequestId(requestId) {
   return findHelpRequestById(requestId);
 }
 
-async function markHelpRequestAsCancelled(userId, requestId) {
-  await query(
+async function markHelpRequestAsCancelled(userId, requestId, executor = null) {
+  await runQuery(
+    executor,
     `
       UPDATE help_requests
       SET status = 'CANCELLED',
@@ -512,7 +522,7 @@ async function markHelpRequestAsCancelled(userId, requestId) {
     [userId, requestId],
   );
 
-  return findHelpRequestByIdForUser(userId, requestId);
+  return findHelpRequestByIdForUser(userId, requestId, executor);
 }
 
 async function markHelpRequestAsCancelledByRequestId(requestId) {

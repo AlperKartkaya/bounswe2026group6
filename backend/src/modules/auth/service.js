@@ -162,6 +162,19 @@ async function verifyUserEmail(token) {
     throw error;
   }
 
+  const user = await findUserById(decoded.userId);
+  if (!user || user.is_deleted) {
+    const error = new Error('Invalid verification token');
+    error.code = 'INVALID_VERIFICATION_TOKEN';
+    throw error;
+  }
+
+  if (user.is_banned) {
+    const error = new Error('Your account is banned. Please contact support.');
+    error.code = 'USER_BANNED';
+    throw error;
+  }
+
   const updatedUser = await markEmailVerified(decoded.userId);
   const adminRecord = await findAdminByUserId(updatedUser.user_id);
   const tokenPayload = buildAccessTokenPayload(updatedUser, adminRecord);

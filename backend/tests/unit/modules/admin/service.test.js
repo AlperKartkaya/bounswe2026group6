@@ -8,6 +8,12 @@ jest.mock('../../../../src/modules/help-requests/repository', () => ({
 jest.mock('../../../../src/modules/availability/service', () => ({
   cancelAssignmentByRequestId: jest.fn(),
   cancelAssignmentsForBannedVolunteer: jest.fn(),
+  tryToAssignRequest: jest.fn(),
+}));
+jest.mock('../../../../src/db/pool', () => ({
+  pool: {
+    connect: jest.fn(),
+  },
 }));
 
 const {
@@ -38,10 +44,19 @@ const {
 const {
   cancelAssignmentByRequestId,
   cancelAssignmentsForBannedVolunteer,
+  tryToAssignRequest,
 } = require('../../../../src/modules/availability/service');
+const { pool } = require('../../../../src/db/pool');
+
+let mockClient;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockClient = {
+    query: jest.fn().mockResolvedValue({ rows: [] }),
+    release: jest.fn(),
+  };
+  pool.connect.mockResolvedValue(mockClient);
 });
 
 describe('admin service', () => {
@@ -109,20 +124,40 @@ describe('admin service', () => {
     ]);
     markHelpRequestAsCancelled.mockResolvedValue({});
     cancelAssignmentByRequestId.mockResolvedValue();
-    cancelAssignmentsForBannedVolunteer.mockResolvedValue({});
+    cancelAssignmentsForBannedVolunteer.mockResolvedValue({
+      affectedRequestId: 'req-open-1',
+    });
+    tryToAssignRequest.mockResolvedValue(true);
 
     const result = await banUserForAdmin({ userId: 'u1', reason: 'Abuse' });
 
-    expect(findBanTargetByUserId).toHaveBeenCalledWith('u1');
-    expect(banUserById).toHaveBeenCalledWith('u1', 'Abuse');
-    expect(listHelpRequestsByUserId).toHaveBeenCalledWith('u1');
+    expect(pool.connect).toHaveBeenCalledTimes(1);
+    expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
+    expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+    expect(findBanTargetByUserId).toHaveBeenCalledWith('u1', mockClient);
+    expect(banUserById).toHaveBeenCalledWith('u1', 'Abuse', mockClient);
+    expect(listHelpRequestsByUserId).toHaveBeenCalledWith('u1', mockClient);
     expect(markHelpRequestAsCancelled).toHaveBeenCalledTimes(2);
-    expect(markHelpRequestAsCancelled).toHaveBeenNthCalledWith(1, 'u1', 'req-open-1');
-    expect(markHelpRequestAsCancelled).toHaveBeenNthCalledWith(2, 'u1', 'req-open-2');
+    expect(markHelpRequestAsCancelled).toHaveBeenNthCalledWith(1, 'u1', 'req-open-1', mockClient);
+    expect(markHelpRequestAsCancelled).toHaveBeenNthCalledWith(2, 'u1', 'req-open-2', mockClient);
     expect(cancelAssignmentByRequestId).toHaveBeenCalledTimes(2);
-    expect(cancelAssignmentByRequestId).toHaveBeenNthCalledWith(1, 'req-open-1');
-    expect(cancelAssignmentByRequestId).toHaveBeenNthCalledWith(2, 'req-open-2');
-    expect(cancelAssignmentsForBannedVolunteer).toHaveBeenCalledWith('u1');
+    expect(cancelAssignmentByRequestId).toHaveBeenNthCalledWith(1, 'req-open-1', {
+      db: mockClient,
+      notify: false,
+      runMatching: false,
+    });
+    expect(cancelAssignmentByRequestId).toHaveBeenNthCalledWith(2, 'req-open-2', {
+      db: mockClient,
+      notify: false,
+      runMatching: false,
+    });
+    expect(cancelAssignmentsForBannedVolunteer).toHaveBeenCalledWith('u1', {
+      db: mockClient,
+      notify: false,
+      runMatching: false,
+    });
+    expect(tryToAssignRequest).toHaveBeenCalledWith('req-open-1');
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
     expect(result).toEqual(
       expect.objectContaining({
         userId: 'u1',
@@ -138,6 +173,8 @@ describe('admin service', () => {
     const result = await banUserForAdmin({ userId: 'missing', reason: null });
 
     expect(result).toBeNull();
+    expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     expect(banUserById).not.toHaveBeenCalled();
     expect(listHelpRequestsByUserId).not.toHaveBeenCalled();
     expect(markHelpRequestAsCancelled).not.toHaveBeenCalled();
@@ -150,6 +187,7 @@ describe('admin service', () => {
       banUserForAdmin({ actorUserId: 'admin_1', userId: 'admin_1', reason: 'self' }),
     ).rejects.toMatchObject({ code: 'SELF_BAN_FORBIDDEN' });
 
+    expect(pool.connect).not.toHaveBeenCalled();
     expect(findBanTargetByUserId).not.toHaveBeenCalled();
     expect(banUserById).not.toHaveBeenCalled();
   });
@@ -161,7 +199,8 @@ describe('admin service', () => {
       banUserForAdmin({ actorUserId: 'admin_1', userId: 'admin_2', reason: 'nope' }),
     ).rejects.toMatchObject({ code: 'ADMIN_BAN_FORBIDDEN' });
 
-    expect(findBanTargetByUserId).toHaveBeenCalledWith('admin_2');
+    expect(findBanTargetByUserId).toHaveBeenCalledWith('admin_2', mockClient);
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     expect(banUserById).not.toHaveBeenCalled();
     expect(listHelpRequestsByUserId).not.toHaveBeenCalled();
     expect(markHelpRequestAsCancelled).not.toHaveBeenCalled();
@@ -169,7 +208,7 @@ describe('admin service', () => {
     expect(cancelAssignmentsForBannedVolunteer).not.toHaveBeenCalled();
   });
 
-  test('banUserForAdmin rolls back ban when cleanup fails', async () => {
+  test('banUserForAdmin rolls back transaction when cleanup fails', async () => {
     findBanTargetByUserId.mockResolvedValue({ user_id: 'u1', is_admin: false });
     banUserById.mockResolvedValue({
       user_id: 'u1',
@@ -191,7 +230,8 @@ describe('admin service', () => {
       banUserForAdmin({ userId: 'u1', reason: 'Abuse' }),
     ).rejects.toThrow('cleanup failed');
 
-    expect(unbanUserById).toHaveBeenCalledWith('u1');
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(unbanUserById).not.toHaveBeenCalled();
   });
 
   test('getHelpRequestsForAdmin delegates to repository', async () => {

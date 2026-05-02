@@ -285,27 +285,37 @@ async function cancelMyAssignment(userId, { assignmentId }) {
   };
 }
 
-async function cancelAssignmentByRequestId(requestId) {
-  const assignments = await findActiveAssignmentsByRequestId(requestId);
+async function cancelAssignmentByRequestId(requestId, options = {}) {
+  const executor = options.db || null;
+  const shouldNotify = options.notify !== false;
+  const shouldRunMatching = options.runMatching !== false;
+
+  const assignments = await findActiveAssignmentsByRequestId(requestId, executor);
 
   for (const assignment of assignments) {
-    const volunteer = await findVolunteerById(assignment.volunteer_id);
-    await notifyVolunteerTaskUpdated(
-      volunteer ? volunteer.user_id : null,
-      requestId,
-      null,
-      'assignment_cancelled_by_request_update',
-    );
-    await cancelAssignment(assignment.assignment_id);
+    const volunteer = await findVolunteerById(assignment.volunteer_id, executor);
+    if (shouldNotify) {
+      await notifyVolunteerTaskUpdated(
+        volunteer ? volunteer.user_id : null,
+        requestId,
+        null,
+        'assignment_cancelled_by_request_update',
+      );
+    }
+    await cancelAssignment(assignment.assignment_id, executor);
   }
 
-  if (assignments.length > 0) {
+  if (assignments.length > 0 && shouldRunMatching) {
     await runAssignmentCycle();
   }
 }
 
-async function cancelAssignmentsForBannedVolunteer(userId) {
-  const volunteer = await findVolunteerByUserId(userId);
+async function cancelAssignmentsForBannedVolunteer(userId, options = {}) {
+  const executor = options.db || null;
+  const shouldNotify = options.notify !== false;
+  const shouldRunMatching = options.runMatching !== false;
+
+  const volunteer = await findVolunteerByUserId(userId, executor);
 
   if (!volunteer) {
     return {
@@ -315,12 +325,18 @@ async function cancelAssignmentsForBannedVolunteer(userId) {
     };
   }
 
-  const activeAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id);
+  const activeAssignment = await getAssignmentByVolunteerId(volunteer.volunteer_id, executor);
 
   if (activeAssignment) {
-    await notifyVolunteerTaskUpdated(userId, activeAssignment.request_id, null, 'volunteer_banned');
-    await cancelAssignment(activeAssignment.assignment_id);
-    await syncRequestStatusFromAssignments(activeAssignment.request_id);
+    if (shouldNotify) {
+      await notifyVolunteerTaskUpdated(userId, activeAssignment.request_id, null, 'volunteer_banned');
+    }
+    await cancelAssignment(activeAssignment.assignment_id, executor);
+    if (executor) {
+      await syncRequestStatusPreservingInProgress(activeAssignment.request_id, executor);
+    } else {
+      await syncRequestStatusFromAssignments(activeAssignment.request_id);
+    }
   }
 
   await updateVolunteerAvailability(
@@ -328,10 +344,11 @@ async function cancelAssignmentsForBannedVolunteer(userId) {
     false,
     volunteer.last_known_latitude,
     volunteer.last_known_longitude,
+    executor,
   );
-  await createAvailabilityRecord(volunteer.volunteer_id, false, false);
+  await createAvailabilityRecord(volunteer.volunteer_id, false, false, executor);
 
-  if (activeAssignment) {
+  if (activeAssignment && shouldRunMatching) {
     await runAssignmentCycle();
   }
 

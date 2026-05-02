@@ -34,6 +34,26 @@ const DEFAULT_FILTERS: UsersFilters = {
 
 const PAGE_SIZE = 25;
 
+function decodeTokenUserId(token: string | null): string | null {
+    if (!token) {
+        return null;
+    }
+
+    const parts = token.split(".");
+    if (parts.length < 2) {
+        return null;
+    }
+
+    try {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+        return typeof payload.userId === "string" && payload.userId.trim() !== ""
+            ? payload.userId
+            : null;
+    } catch {
+        return null;
+    }
+}
+
 function formatDateTime(value: string | null) {
     if (!value) {
         return "-";
@@ -95,7 +115,12 @@ export default function AdminUsersView() {
     const [banModalUser, setBanModalUser] = React.useState<AdminUserListItem | null>(null);
     const [banReasonInput, setBanReasonInput] = React.useState("");
     const [loadedOnce, setLoadedOnce] = React.useState(false);
+    const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
     const latestRequestIdRef = React.useRef(0);
+
+    React.useEffect(() => {
+        setCurrentUserId(decodeTokenUserId(getAccessToken()));
+    }, []);
 
     const redirectToLogin = React.useCallback(() => {
         clearAccessToken();
@@ -216,6 +241,7 @@ export default function AdminUsersView() {
         try {
             if (mode === "ban") {
                 await banAdminUser(token, user.userId, reason ?? null);
+                closeBanModal();
                 setActionInfo(`User ${user.email} was banned successfully.`);
             } else {
                 await unbanAdminUser(token, user.userId);
@@ -243,7 +269,6 @@ export default function AdminUsersView() {
 
         const reason = banReasonInput.trim();
         const targetUser = banModalUser;
-        closeBanModal();
         void runModerationAction(targetUser, "ban", reason);
     };
 
@@ -421,7 +446,9 @@ export default function AdminUsersView() {
                                     <td>{user.banReason || "-"}</td>
                                     <td>{formatDateTime(user.createdAt)}</td>
                                     <td>
-                                        {user.isAdmin ? (
+                                        {currentUserId && user.userId === currentUserId ? (
+                                            <span className="admin-subtle">Your account</span>
+                                        ) : user.isAdmin ? (
                                             <span className="admin-subtle">Admin account</span>
                                         ) : user.isBanned ? (
                                             <SecondaryButton
@@ -488,8 +515,12 @@ export default function AdminUsersView() {
                             <SecondaryButton className="h-10 w-auto px-4" onClick={closeBanModal}>
                                 Cancel
                             </SecondaryButton>
-                            <PrimaryButton className="h-10 w-auto px-4" onClick={confirmBan}>
-                                Confirm Ban
+                            <PrimaryButton
+                                className="h-10 w-auto px-4"
+                                onClick={confirmBan}
+                                disabled={actionUserId === banModalUser.userId}
+                            >
+                                {actionUserId === banModalUser.userId ? "Working..." : "Confirm Ban"}
                             </PrimaryButton>
                         </div>
                     </div>

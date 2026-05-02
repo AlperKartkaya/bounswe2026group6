@@ -1,5 +1,12 @@
 const { query } = require('../../db/pool');
 
+function runQuery(executor, text, params = []) {
+  if (executor && typeof executor.query === 'function') {
+    return executor.query(text, params);
+  }
+  return query(text, params);
+}
+
 function getDerivedUrgencySql() {
   return `
     CASE
@@ -86,8 +93,9 @@ async function listUsers({
   };
 }
 
-async function banUserById(userId, reason = null) {
-  const result = await query(
+async function banUserById(userId, reason = null, executor = null) {
+  const result = await runQuery(
+    executor,
     `
       WITH updated AS (
         UPDATE users u
@@ -123,8 +131,9 @@ async function banUserById(userId, reason = null) {
   return result.rows[0] || null;
 }
 
-async function findBanTargetByUserId(userId) {
-  const result = await query(
+async function findBanTargetByUserId(userId, executor = null) {
+  const result = await runQuery(
+    executor,
     `
       SELECT
         u.user_id,
@@ -141,8 +150,9 @@ async function findBanTargetByUserId(userId) {
   return result.rows[0] || null;
 }
 
-async function unbanUserById(userId) {
-  const result = await query(
+async function unbanUserById(userId, executor = null) {
+  const result = await runQuery(
+    executor,
     `
       WITH updated AS (
         UPDATE users u

@@ -18,7 +18,9 @@ const {
 const {
   cancelAssignmentByRequestId,
   cancelAssignmentsForBannedVolunteer,
+  tryToAssignRequest,
 } = require('../availability/service');
+const { pool } = require('../../db/pool');
 
 const OPEN_REQUEST_STATUSES = new Set(['PENDING', 'ASSIGNED', 'IN_PROGRESS']);
 
@@ -61,28 +63,51 @@ async function banUserForAdmin({ actorUserId = null, userId, reason = null }) {
     throw buildModerationError('SELF_BAN_FORBIDDEN', 'Admins cannot ban their own account.');
   }
 
-  const target = await findBanTargetByUserId(userId);
-  if (!target) {
-    return null;
-  }
-
-  if (target.is_admin) {
-    throw buildModerationError('ADMIN_BAN_FORBIDDEN', 'Admin accounts cannot be banned.');
-  }
-
-  const updated = await banUserById(userId, reason);
-
-  if (!updated) {
-    return null;
-  }
+  const client = await pool.connect();
+  let updated = null;
+  let volunteerCleanup = null;
 
   try {
-    await cancelOpenRequestsForBannedRequester(userId);
-    await cancelAssignmentsForBannedVolunteer(userId);
+    await client.query('BEGIN');
+
+    const target = await findBanTargetByUserId(userId, client);
+    if (!target) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    if (target.is_admin) {
+      throw buildModerationError('ADMIN_BAN_FORBIDDEN', 'Admin accounts cannot be banned.');
+    }
+
+    updated = await banUserById(userId, reason, client);
+    if (!updated) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    await cancelOpenRequestsForBannedRequester(userId, { db: client });
+    volunteerCleanup = await cancelAssignmentsForBannedVolunteer(userId, {
+      db: client,
+      notify: false,
+      runMatching: false,
+    });
+
+    await client.query('COMMIT');
   } catch (error) {
-    // Keep moderation state consistent when downstream cleanup fails.
-    await unbanUserById(userId);
+    await client.query('ROLLBACK');
     throw error;
+  } finally {
+    client.release();
+  }
+
+  // Try rematching only after transaction commit to avoid partial writes.
+  if (volunteerCleanup?.affectedRequestId) {
+    try {
+      await tryToAssignRequest(volunteerCleanup.affectedRequestId);
+    } catch (error) {
+      console.error('admin.banUserForAdmin rematching failed', error);
+    }
   }
 
   return mapAdminUserRow(updated);
@@ -121,13 +146,18 @@ async function getDeploymentMonitoringForAdmin(options = {}) {
   return getDeploymentMonitoring(options);
 }
 
-async function cancelOpenRequestsForBannedRequester(userId) {
-  const requesterRequests = await listHelpRequestsByUserId(userId);
+async function cancelOpenRequestsForBannedRequester(userId, options = {}) {
+  const executor = options.db || null;
+  const requesterRequests = await listHelpRequestsByUserId(userId, executor);
   const openRequests = requesterRequests.filter((request) => OPEN_REQUEST_STATUSES.has(request.internalStatus));
 
   for (const request of openRequests) {
-    await markHelpRequestAsCancelled(userId, request.id);
-    await cancelAssignmentByRequestId(request.id);
+    await markHelpRequestAsCancelled(userId, request.id, executor);
+    await cancelAssignmentByRequestId(request.id, {
+      db: executor,
+      notify: false,
+      runMatching: false,
+    });
   }
 }
 
