@@ -48,6 +48,8 @@ type ProfileForm = {
     bloodType: string;
     dateOfBirth: string;
     medicalHistory: string;
+    chronicDiseases: string;
+    allergies: string;
     profession: string;
     expertise: string[];
     country: string;
@@ -69,6 +71,8 @@ const initialForm: ProfileForm = {
     bloodType: "",
     dateOfBirth: "",
     medicalHistory: "",
+    chronicDiseases: "",
+    allergies: "",
     profession: "",
     expertise: [],
     country: "",
@@ -463,6 +467,8 @@ export default function CompleteProfileForm() {
 
             await patchMyHealth(token, {
                 medicalConditions: parseListField(form.medicalHistory),
+                chronicDiseases: parseListField(form.chronicDiseases),
+                allergies: parseListField(form.allergies),
                 bloodType: form.bloodType || null,
             });
 
@@ -663,10 +669,32 @@ export default function CompleteProfileForm() {
             <ProfileInfoRow label="Medical History">
                 <TextArea
                     id="medicalHistory"
-                    placeholder="Chronic diseases, allergies, or other important notes"
+                    placeholder="Medical history"
                     value={form.medicalHistory}
                     onChange={(e) =>
                         setForm({ ...form, medicalHistory: e.target.value })
+                    }
+                />
+            </ProfileInfoRow>
+
+            <ProfileInfoRow label="Chronic Diseases">
+                <TextArea
+                    id="chronicDiseases"
+                    placeholder="Optional"
+                    value={form.chronicDiseases}
+                    onChange={(e) =>
+                        setForm({ ...form, chronicDiseases: e.target.value })
+                    }
+                />
+            </ProfileInfoRow>
+
+            <ProfileInfoRow label="Allergies">
+                <TextArea
+                    id="allergies"
+                    placeholder="Optional"
+                    value={form.allergies}
+                    onChange={(e) =>
+                        setForm({ ...form, allergies: e.target.value })
                     }
                 />
             </ProfileInfoRow>
