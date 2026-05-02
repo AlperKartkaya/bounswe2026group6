@@ -3,6 +3,7 @@ package com.neph.features.home.presentation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +26,7 @@ import com.neph.features.availability.data.AvailabilityAccessPolicy
 import com.neph.features.availability.data.AvailabilityRepository
 import com.neph.features.availability.presentation.AvailableToHelpCard
 import com.neph.features.profile.data.DeviceLocationProvider
+import com.neph.features.profile.data.ProfileRepository
 import com.neph.features.requesthelp.data.RequestHelpRepository
 import com.neph.features.safetystatus.data.SafetyStatusRepository
 import com.neph.navigation.Routes
@@ -40,7 +42,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
-    onRequestHelp: () -> Unit,
+    onRequestHelp: (String?) -> Unit,
     onOpenAssignedRequest: () -> Unit,
     onOpenMyHelpRequests: () -> Unit,
     onNavigateToRoute: (String) -> Unit,
@@ -109,19 +111,40 @@ fun HomeScreen(
         emergencyError = ""
         emergencyInfo = ""
 
-        if (!isAuthenticated || sessionToken.isNullOrBlank()) {
-            onRequestHelp()
-            return
-        }
-
         scope.launch {
             requestHelpLoading = true
             try {
-                val hasActiveRequest = RequestHelpRepository.hasActiveHelpRequest(sessionToken)
+                val hasActiveRequest = try {
+                    if (!sessionToken.isNullOrBlank()) {
+                        RequestHelpRepository.hasActiveHelpRequest(sessionToken)
+                    } else {
+                        false
+                    }
+                } catch (error: ApiException) {
+                    if (error.status == 401) throw error else false
+                } catch (_: Exception) {
+                    false
+                }
                 if (hasActiveRequest) {
                     onOpenMyHelpRequests()
                 } else {
-                    onRequestHelp()
+                    val locationAttempt = DeviceLocationProvider.captureCurrentLocationForSharing(
+                        context = context,
+                        sharingEnabled = true
+                    )
+                    val currentLocation = locationAttempt.location
+                    val draft = RequestHelpRepository.createEmergencyDraft(
+                        token = sessionToken,
+                        profile = ProfileRepository.getProfile(),
+                        currentLocation = currentLocation,
+                        reverseLocation = null
+                    )
+                    emergencyInfo = if (currentLocation != null) {
+                        "Help request draft created with your current location and queued for sync."
+                    } else {
+                        "Help request draft created with your saved location and queued for sync."
+                    }
+                    onRequestHelp(draft.requestId)
                 }
             } catch (error: ApiException) {
                 if (error.status == 401) {
@@ -233,8 +256,9 @@ fun HomeScreen(
                     )
 
                     PrimaryButton(
-                        text = "I need help",
+                        text = "Create Help Request",
                         onClick = ::handleRequestHelp,
+                        modifier = Modifier.heightIn(min = 72.dp),
                         loading = requestHelpLoading,
                         enabled = !availabilityLoading && !markSafeLoading
                     )

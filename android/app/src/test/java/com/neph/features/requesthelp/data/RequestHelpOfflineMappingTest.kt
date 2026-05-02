@@ -43,6 +43,40 @@ class RequestHelpOfflineMappingTest {
     }
 
     @Test
+    fun submissionJsonIncludesCoordinatesWhenAvailable() {
+        val submission = sampleSubmission().copy(
+            location = RequestHelpLocationSubmission(
+                country = "Turkey",
+                city = "Istanbul",
+                district = "Kadikoy",
+                neighborhood = "Moda",
+                extraAddress = "Near park",
+                latitude = 40.987,
+                longitude = 29.025,
+                coordinateSource = "DEVICE_GPS",
+                coordinateCapturedAt = "2026-05-02T10:00:00.000Z"
+            )
+        )
+        val json = submission.toJson()
+        val entity = submission.toEntity(
+            localId = "local-with-location",
+            ownerType = LocalOwnerType.AUTHENTICATED,
+            now = 1234L,
+            syncStatus = SyncStatus.PENDING_CREATE
+        )
+
+        val location = json.getJSONObject("location")
+        assertEquals(40.987, location.getDouble("latitude"), 0.0)
+        assertEquals(29.025, location.getDouble("longitude"), 0.0)
+        assertEquals("DEVICE_GPS", location.getJSONObject("coordinate").getString("source"))
+        assertEquals("2026-05-02T10:00:00.000Z", location.getJSONObject("coordinate").getString("capturedAt"))
+        assertEquals(40.987, entity.latitude ?: 0.0, 0.0)
+        assertEquals(29.025, entity.longitude ?: 0.0, 0.0)
+        assertEquals("DEVICE_GPS", entity.coordinateSource)
+        assertEquals("2026-05-02T10:00:00.000Z", entity.coordinateCapturedAt)
+    }
+
+    @Test
     fun remoteMappingPreservesLifecycleAndOperationalMetadata() {
         val entity = JSONObject().apply {
             put("id", "req_remote_1")

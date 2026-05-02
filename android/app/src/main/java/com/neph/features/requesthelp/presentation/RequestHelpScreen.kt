@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import com.neph.core.network.ApiException
+import com.neph.core.database.HelpRequestEntity
 import com.neph.features.auth.data.AuthRepository
 import com.neph.features.auth.data.AuthSessionStore
 import com.neph.features.auth.util.countryCodeOptions
@@ -44,6 +45,7 @@ import com.neph.features.profile.presentation.components.LocationSelector
 import com.neph.features.requesthelp.data.RequestHelpReverseLocation
 import com.neph.features.requesthelp.data.RequestHelpRepository
 import com.neph.features.requesthelp.data.RequestHelpSubmission
+import com.neph.features.requesthelp.data.jsonArrayToStringList
 import com.neph.ui.components.buttons.PrimaryButton
 import com.neph.ui.components.buttons.SecondaryButton
 import com.neph.ui.components.display.HelperText
@@ -135,6 +137,8 @@ private val helpTypeApiValues = mapOf(
     "Other" to "other"
 )
 
+private val helpTypeLabelsByApiValue = helpTypeApiValues.entries.associate { (label, value) -> value to label }
+
 private fun parseBackendPhoneNumber(countryCode: String, phone: String): Long? {
     if (countryCode != "+90") {
         return null
@@ -162,6 +166,29 @@ private fun buildPrefilledForm(profile: ProfileData): RequestHelpFormState {
         fullName = profile.fullName.orEmpty(),
         countryCode = phoneParts.countryCode,
         phoneNumber = phoneParts.phone
+    )
+}
+
+private fun HelpRequestEntity.toFormState(): RequestHelpFormState {
+    val phoneParts = normalizePhoneParts(contactPhone)
+    return RequestHelpFormState(
+        helpTypes = helpTypesJson.jsonArrayToStringList().mapNotNull { helpTypeLabelsByApiValue[it] },
+        otherHelpType = otherHelpText,
+        affectedPeopleCount = affectedPeopleCount.toString(),
+        riskFlags = riskFlagsJson.jsonArrayToStringList(),
+        vulnerableGroups = vulnerableGroupsJson.jsonArrayToStringList(),
+        situationDescription = description,
+        bloodType = bloodType,
+        country = country,
+        city = city,
+        district = district,
+        neighborhood = neighborhood,
+        shortAddress = extraAddress,
+        fullName = contactFullName,
+        countryCode = phoneParts.countryCode,
+        phoneNumber = phoneParts.phone,
+        alternativePhone = contactAlternativePhone.orEmpty(),
+        confirmationAccepted = true
     )
 }
 
@@ -371,6 +398,7 @@ internal fun resolveGuestLocationAutofillSelection(
 
 @Composable
 fun RequestHelpScreen(
+    draftLocalId: String? = null,
     onNavigateBack: () -> Unit,
     onNavigateToLogin: () -> Unit,
     onNavigateToMyHelpRequests: () -> Unit
@@ -394,6 +422,7 @@ fun RequestHelpScreen(
     var infoMessage by remember { mutableStateOf("") }
     var mapActionMessage by rememberSaveable { mutableStateOf("") }
     var checkingActiveRequest by remember { mutableStateOf(isLoggedIn) }
+    var activeDraftLocalId by rememberSaveable { mutableStateOf(draftLocalId.orEmpty()) }
     var guestLocationAutoFillLoading by remember { mutableStateOf(false) }
     var guestLocationPermissionHandled by rememberSaveable { mutableStateOf(false) }
     val guestFormInteractionStarted = !isLoggedIn && formState != RequestHelpFormState()
@@ -485,6 +514,16 @@ fun RequestHelpScreen(
     }
 
     LaunchedEffect(sessionToken) {
+        val existingDraft = activeDraftLocalId.takeIf { it.isNotBlank() }?.let { localId ->
+            RequestHelpRepository.getLocalHelpRequest(localId)
+        }
+        if (existingDraft != null) {
+            formState = existingDraft.toFormState()
+            infoMessage = "Emergency draft is saved locally. Complete the form to update the same request."
+            checkingActiveRequest = false
+            return@LaunchedEffect
+        }
+
         if (!isLoggedIn) {
             formState = RequestHelpFormState()
             checkingActiveRequest = false
@@ -550,17 +589,27 @@ fun RequestHelpScreen(
         scope.launch {
             try {
                 if (isLoggedIn) {
-                    val hasActiveRequest = RequestHelpRepository.hasActiveHelpRequest(sessionToken)
+                    val hasActiveRequest = activeDraftLocalId.isBlank() && RequestHelpRepository.hasActiveHelpRequest(sessionToken)
                     if (hasActiveRequest) {
                         errorMessage = "You can only have one active help request at a time."
                         return@launch
                     }
                 }
 
-                RequestHelpRepository.createHelpRequest(
-                    token = sessionToken,
-                    submission = buildSubmission(formState, availableLocationData)
-                )
+                val submission = buildSubmission(formState, availableLocationData)
+                val result = if (activeDraftLocalId.isNotBlank()) {
+                    RequestHelpRepository.updateHelpRequest(
+                        token = sessionToken,
+                        localId = activeDraftLocalId,
+                        submission = submission
+                    )
+                } else {
+                    RequestHelpRepository.createHelpRequest(
+                        token = sessionToken,
+                        submission = submission
+                    )
+                }
+                activeDraftLocalId = result.requestId
                 infoMessage = "Help request saved on this device and queued for sync."
                 onNavigateToMyHelpRequests()
             } catch (error: ApiException) {
