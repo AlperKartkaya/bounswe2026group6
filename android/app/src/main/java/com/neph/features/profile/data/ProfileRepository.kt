@@ -16,6 +16,13 @@ object ProfileRepository {
     private lateinit var prefs: SharedPreferences
     private var cachedProfile = ProfileData()
 
+    internal const val LocationSharingInitializationMessage =
+        "To enable Share Current Location, capture and save a valid location from your profile first."
+
+    class LocationSharingInitializationRequiredException(
+        message: String = LocationSharingInitializationMessage
+    ) : IllegalStateException(message)
+
     fun initialize(context: Context) {
         if (!::prefs.isInitialized) {
             prefs = context.applicationContext.getSharedPreferences(PrefsName, Context.MODE_PRIVATE)
@@ -99,14 +106,35 @@ object ProfileRepository {
     ): ProfileData {
         ensureInitialized()
 
+        val token = AuthSessionStore.getAccessToken().orEmpty()
+        check(token.isNotBlank()) { "Access token is required before saving the profile." }
+
+        val trustedSavedCoordinates = if (
+            cachedProfile.shareLocation != true &&
+            profile.shareLocation == true &&
+            currentDeviceLocation == null
+        ) {
+            hasTrustedRemoteSharedCoordinates(token)
+        } else {
+            false
+        }
+
+        if (
+            isFirstTimeShareEnableWithoutCoordinates(
+                previousProfile = cachedProfile,
+                nextProfile = profile,
+                currentDeviceLocation = currentDeviceLocation,
+                hasTrustedSavedCoordinates = trustedSavedCoordinates
+            )
+        ) {
+            throw LocationSharingInitializationRequiredException()
+        }
+
         try {
             LocationTreeRepository.ensureLocationData()
         } catch (_: Exception) {
             // Keep fallback location mapping when location tree is unavailable.
         }
-
-        val token = AuthSessionStore.getAccessToken().orEmpty()
-        check(token.isNotBlank()) { "Access token is required before saving the profile." }
 
         val fallbackNames = splitFullName(profile.fullName.orEmpty())
         val firstName = profile.firstName?.trim()?.takeIf(String::isNotBlank) ?: fallbackNames.first
@@ -211,6 +239,37 @@ object ProfileRepository {
             }
             throw error
         }
+    }
+
+    internal fun isFirstTimeShareEnableWithoutCoordinates(
+        previousProfile: ProfileData,
+        nextProfile: ProfileData,
+        currentDeviceLocation: CurrentDeviceLocation?,
+        hasTrustedSavedCoordinates: Boolean
+    ): Boolean {
+        val enablingFromDisabledToEnabled = previousProfile.shareLocation != true && nextProfile.shareLocation == true
+        if (!enablingFromDisabledToEnabled) {
+            return false
+        }
+
+        val hasFreshCurrentCoordinates = currentDeviceLocation != null
+
+        return !hasTrustedSavedCoordinates && !hasFreshCurrentCoordinates
+    }
+
+    private suspend fun hasTrustedRemoteSharedCoordinates(token: String): Boolean {
+        val profileResponse = JsonHttpClient.request(
+            path = "/profiles/me",
+            token = token
+        )
+        val locationProfile = profileResponse.optJSONObject("locationProfile") ?: JSONObject()
+        val coordinate = locationProfile.optJSONObject("coordinate") ?: JSONObject()
+        val sharedLatitude = coordinate.optNullableDouble("latitude")
+            ?: locationProfile.optNullableDouble("latitude")
+        val sharedLongitude = coordinate.optNullableDouble("longitude")
+            ?: locationProfile.optNullableDouble("longitude")
+
+        return sharedLatitude != null && sharedLongitude != null
     }
 
     suspend fun syncLocationOnLaunch(

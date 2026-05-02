@@ -27,6 +27,7 @@ import com.neph.features.profile.data.LocationData
 import com.neph.features.profile.data.LocationTreeRepository
 import com.neph.features.profile.data.ProfileData
 import com.neph.features.profile.data.ProfileRepository
+import com.neph.features.profile.data.ProfileRepository.LocationSharingInitializationRequiredException
 import com.neph.features.profile.data.bloodTypeOptions
 import com.neph.features.profile.data.calculateAgeFromDateOfBirth
 import com.neph.features.profile.data.combinePhoneNumber
@@ -266,6 +267,8 @@ fun EditProfileScreen(
                     }
                 }
                 onSave(profile)
+            } catch (guardError: LocationSharingInitializationRequiredException) {
+                error = guardError.message ?: "To enable Share Current Location, save a valid current location first."
             } catch (cancellationException: CancellationException) {
                 throw cancellationException
             } catch (errorResponse: ApiException) {
