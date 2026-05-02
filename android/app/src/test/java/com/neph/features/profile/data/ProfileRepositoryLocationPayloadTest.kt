@@ -15,7 +15,8 @@ class ProfileRepositoryLocationPayloadTest {
         val result = ProfileRepository.isFirstTimeShareEnableWithoutCoordinates(
             previousProfile = previous,
             nextProfile = next,
-            currentDeviceLocation = null
+            currentDeviceLocation = null,
+            hasTrustedSavedCoordinates = false
         )
 
         assertTrue(result)
@@ -34,21 +35,38 @@ class ProfileRepositoryLocationPayloadTest {
                 longitude = 29.009,
                 accuracyMeters = 10.0,
                 capturedAt = "2026-04-20T10:20:30.000Z"
-            )
+            ),
+            hasTrustedSavedCoordinates = false
         )
 
         assertFalse(result)
     }
 
     @Test
-    fun isFirstTimeShareEnableWithoutCoordinates_returnsFalse_whenSavedCoordinatesExist() {
+    fun isFirstTimeShareEnableWithoutCoordinates_returnsTrue_whenOnlyLocalSavedCoordinatesExist() {
         val previous = ProfileData(shareLocation = false, sharedLatitude = 41.043, sharedLongitude = 29.009)
         val next = previous.copy(shareLocation = true)
 
         val result = ProfileRepository.isFirstTimeShareEnableWithoutCoordinates(
             previousProfile = previous,
             nextProfile = next,
-            currentDeviceLocation = null
+            currentDeviceLocation = null,
+            hasTrustedSavedCoordinates = false
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun isFirstTimeShareEnableWithoutCoordinates_returnsFalse_whenTrustedSavedCoordinatesExist() {
+        val previous = ProfileData(shareLocation = false, sharedLatitude = null, sharedLongitude = null)
+        val next = previous.copy(shareLocation = true)
+
+        val result = ProfileRepository.isFirstTimeShareEnableWithoutCoordinates(
+            previousProfile = previous,
+            nextProfile = next,
+            currentDeviceLocation = null,
+            hasTrustedSavedCoordinates = true
         )
 
         assertFalse(result)
@@ -62,7 +80,8 @@ class ProfileRepositoryLocationPayloadTest {
         val result = ProfileRepository.isFirstTimeShareEnableWithoutCoordinates(
             previousProfile = previous,
             nextProfile = next,
-            currentDeviceLocation = null
+            currentDeviceLocation = null,
+            hasTrustedSavedCoordinates = false
         )
 
         assertFalse(result)
