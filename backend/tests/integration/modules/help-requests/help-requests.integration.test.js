@@ -1818,6 +1818,105 @@ describe('help-requests integration', () => {
 		]));
 	});
 
+	test('GET /api/help-requests/active ignores claim-only admin JWT flags', async () => {
+		const app = createTestApp();
+		const requesterId = 'user_active_visibility_claim_only_1';
+		await seedActiveUser(requesterId, 'activevisibilityclaimonly1@example.com');
+
+		const requesterToken = buildAuthToken(requesterId);
+		await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${requesterToken}`)
+			.send(buildCreatePayload({
+				helpTypes: ['shelter'],
+				location: {
+					country: 'turkiye',
+					city: 'istanbul',
+					district: 'besiktas',
+					neighborhood: 'levazim',
+					extraAddress: 'Claim-only admin check',
+					latitude: 41.04321,
+					longitude: 29.00987,
+				},
+			}));
+
+		const claimOnlyAdminToken = jwt.sign(
+			{
+				userId: requesterId,
+				email: 'activevisibilityclaimonly1@example.com',
+				isAdmin: true,
+				adminRole: 'SUPER_ADMIN',
+			},
+			process.env.JWT_SECRET || 'dev-secret-123',
+			{ expiresIn: '1h' },
+		);
+
+		const response = await request(app)
+			.get('/api/help-requests/active')
+			.set('Authorization', `Bearer ${claimOnlyAdminToken}`);
+
+		expect(response.status).toBe(200);
+		expect(response.body.requests).toHaveLength(1);
+		expect(response.body.requests[0].location.latitude).toBeCloseTo(41.043, 3);
+		expect(response.body.requests[0].location.longitude).toBeCloseTo(29.01, 3);
+		expect(response.body.requests[0].location.neighborhood).toBeUndefined();
+	});
+
+	test('GET /api/help-requests/active treats banned admin token as guest visibility', async () => {
+		const app = createTestApp();
+		const requesterId = 'user_active_visibility_regular_2';
+		const bannedAdminUserId = 'user_active_visibility_banned_admin_1';
+
+		await seedActiveUser(requesterId, 'activevisibilityregular2@example.com');
+		await seedActiveUser(bannedAdminUserId, 'activevisibilitybannedadmin1@example.com');
+		await query(
+			`INSERT INTO admins (admin_id, user_id, role) VALUES ('adm_active_visibility_banned_1', $1, 'OPS')`,
+			[bannedAdminUserId],
+		);
+		await query(
+			`UPDATE users SET is_banned = TRUE, ban_reason = 'Policy', banned_at = CURRENT_TIMESTAMP WHERE user_id = $1`,
+			[bannedAdminUserId],
+		);
+
+		const requesterToken = buildAuthToken(requesterId);
+		await request(app)
+			.post('/api/help-requests')
+			.set('Authorization', `Bearer ${requesterToken}`)
+			.send(buildCreatePayload({
+				helpTypes: ['food'],
+				location: {
+					country: 'turkiye',
+					city: 'istanbul',
+					district: 'besiktas',
+					neighborhood: 'levazim',
+					extraAddress: 'Banned admin visibility check',
+					latitude: 41.04321,
+					longitude: 29.00987,
+				},
+			}));
+
+		const bannedAdminToken = jwt.sign(
+			{
+				userId: bannedAdminUserId,
+				email: 'activevisibilitybannedadmin1@example.com',
+				isAdmin: true,
+				adminRole: 'OPS',
+			},
+			process.env.JWT_SECRET || 'dev-secret-123',
+			{ expiresIn: '1h' },
+		);
+
+		const response = await request(app)
+			.get('/api/help-requests/active')
+			.set('Authorization', `Bearer ${bannedAdminToken}`);
+
+		expect(response.status).toBe(200);
+		expect(response.body.requests).toHaveLength(1);
+		expect(response.body.requests[0].location.latitude).toBeCloseTo(41.043, 3);
+		expect(response.body.requests[0].location.longitude).toBeCloseTo(29.01, 3);
+		expect(response.body.requests[0].location.neighborhood).toBeUndefined();
+	});
+
 	test('GET /api/help-requests/active includes admin-level location detail for admin users', async () => {
 		const app = createTestApp();
 		const adminUserId = 'user_active_visibility_admin_1';

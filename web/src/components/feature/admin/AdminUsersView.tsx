@@ -5,14 +5,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import { clearAccessToken, getAccessToken } from "@/lib/auth";
 import {
+    banAdminUser,
     fetchAdminUsers,
     type AdminUserListItem,
     type AdminUserListOptions,
+    unbanAdminUser,
 } from "@/lib/admin";
 import { SectionCard } from "@/components/ui/display/SectionCard";
 import { SectionHeader } from "@/components/ui/display/SectionHeader";
 import { PrimaryButton } from "@/components/ui/buttons/PrimaryButton";
 import { SecondaryButton } from "@/components/ui/buttons/SecondaryButton";
+import { TextArea } from "@/components/ui/inputs/TextArea";
 
 type VerifiedFilter = "ALL" | "VERIFIED" | "UNVERIFIED";
 type BannedFilter = "ALL" | "BANNED" | "ACTIVE";
@@ -30,6 +33,26 @@ const DEFAULT_FILTERS: UsersFilters = {
 };
 
 const PAGE_SIZE = 25;
+
+function decodeTokenUserId(token: string | null): string | null {
+    if (!token) {
+        return null;
+    }
+
+    const parts = token.split(".");
+    if (parts.length < 2) {
+        return null;
+    }
+
+    try {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+        return typeof payload.userId === "string" && payload.userId.trim() !== ""
+            ? payload.userId
+            : null;
+    } catch {
+        return null;
+    }
+}
 
 function formatDateTime(value: string | null) {
     if (!value) {
@@ -86,8 +109,18 @@ export default function AdminUsersView() {
     const [loading, setLoading] = React.useState(true);
     const [refreshing, setRefreshing] = React.useState(false);
     const [error, setError] = React.useState("");
+    const [actionError, setActionError] = React.useState("");
+    const [actionInfo, setActionInfo] = React.useState("");
+    const [actionUserId, setActionUserId] = React.useState<string | null>(null);
+    const [banModalUser, setBanModalUser] = React.useState<AdminUserListItem | null>(null);
+    const [banReasonInput, setBanReasonInput] = React.useState("");
     const [loadedOnce, setLoadedOnce] = React.useState(false);
+    const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
     const latestRequestIdRef = React.useRef(0);
+
+    React.useEffect(() => {
+        setCurrentUserId(decodeTokenUserId(getAccessToken()));
+    }, []);
 
     const redirectToLogin = React.useCallback(() => {
         clearAccessToken();
@@ -132,6 +165,7 @@ export default function AdminUsersView() {
                 setRefreshing(true);
             }
             setError("");
+            setActionError("");
 
             try {
                 const result = await fetchAdminUsers(token, buildFetchOptions(nextFilters, nextOffset));
@@ -165,14 +199,77 @@ export default function AdminUsersView() {
     }, [loadUsers]);
 
     const applyFilters = () => {
+        setActionInfo("");
         setFilters(pendingFilters);
         void loadUsers(pendingFilters, { offset: 0, mode: "refresh" });
     };
 
     const clearFilters = () => {
+        setActionInfo("");
         setPendingFilters(DEFAULT_FILTERS);
         setFilters(DEFAULT_FILTERS);
         void loadUsers(DEFAULT_FILTERS, { offset: 0, mode: "refresh" });
+    };
+
+    const closeBanModal = () => {
+        setBanModalUser(null);
+        setBanReasonInput("");
+    };
+
+    const openBanModal = (user: AdminUserListItem) => {
+        setActionError("");
+        setActionInfo("");
+        setBanModalUser(user);
+        setBanReasonInput("");
+    };
+
+    const runModerationAction = async (
+        user: AdminUserListItem,
+        mode: "ban" | "unban",
+        reason?: string,
+    ) => {
+        const token = getAccessToken();
+        if (!token) {
+            redirectToLogin();
+            return;
+        }
+
+        setActionError("");
+        setActionInfo("");
+        setActionUserId(user.userId);
+
+        try {
+            if (mode === "ban") {
+                await banAdminUser(token, user.userId, reason ?? null);
+                closeBanModal();
+                setActionInfo(`User ${user.email} was banned successfully.`);
+            } else {
+                await unbanAdminUser(token, user.userId);
+                setActionInfo(`User ${user.email} was unbanned successfully.`);
+            }
+
+            await loadUsers(filters, { offset, mode: "refresh" });
+        } catch (err) {
+            const message = handleAdminApiError(
+                err,
+                mode === "ban" ? "Could not ban user." : "Could not unban user.",
+            );
+            if (message) {
+                setActionError(message);
+            }
+        } finally {
+            setActionUserId(null);
+        }
+    };
+
+    const confirmBan = () => {
+        if (!banModalUser) {
+            return;
+        }
+
+        const reason = banReasonInput.trim();
+        const targetUser = banModalUser;
+        void runModerationAction(targetUser, "ban", reason);
     };
 
     const goToPreviousPage = () => {
@@ -304,6 +401,8 @@ export default function AdminUsersView() {
             </p>
 
             {error ? <p className="admin-error-text">Latest refresh failed: {error}</p> : null}
+            {actionError ? <p className="admin-error-text">Moderation action failed: {actionError}</p> : null}
+            {actionInfo ? <p className="admin-subtle">{actionInfo}</p> : null}
 
             {items.length === 0 ? (
                 <div className="admin-empty-state">
@@ -319,7 +418,9 @@ export default function AdminUsersView() {
                                 <th scope="col">Email</th>
                                 <th scope="col">Email Verified</th>
                                 <th scope="col">Banned</th>
+                                <th scope="col">Ban Reason</th>
                                 <th scope="col">Created At</th>
+                                <th scope="col">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -342,7 +443,31 @@ export default function AdminUsersView() {
                                             <StatusBadge label="Active" tone="default" />
                                         )}
                                     </td>
+                                    <td>{user.banReason || "-"}</td>
                                     <td>{formatDateTime(user.createdAt)}</td>
+                                    <td>
+                                        {currentUserId && user.userId === currentUserId ? (
+                                            <span className="admin-subtle">Your account</span>
+                                        ) : user.isAdmin ? (
+                                            <span className="admin-subtle">Admin account</span>
+                                        ) : user.isBanned ? (
+                                            <SecondaryButton
+                                                className="h-9 w-auto px-3"
+                                                onClick={() => void runModerationAction(user, "unban")}
+                                                disabled={refreshing || actionUserId === user.userId}
+                                            >
+                                                {actionUserId === user.userId ? "Working..." : "Unban"}
+                                            </SecondaryButton>
+                                        ) : (
+                                            <PrimaryButton
+                                                className="h-9 w-auto px-3"
+                                                onClick={() => openBanModal(user)}
+                                                disabled={refreshing || actionUserId === user.userId}
+                                            >
+                                                Ban
+                                            </PrimaryButton>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -361,6 +486,46 @@ export default function AdminUsersView() {
                     Next
                 </SecondaryButton>
             </div>
+
+            {banModalUser ? (
+                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="ban-confirmation-title"
+                        className="w-full max-w-[520px] rounded-[14px] border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] p-5 shadow-xl"
+                    >
+                        <h3 id="ban-confirmation-title" className="text-base font-semibold text-[color:var(--text-primary)]">
+                            Confirm ban for {banModalUser.email}
+                        </h3>
+                        <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
+                            This user will be blocked from login and protected routes until unbanned.
+                        </p>
+                        <div className="mt-4">
+                            <TextArea
+                                id="ban-reason"
+                                label="Reason (optional)"
+                                placeholder="Add moderation reason (optional)"
+                                value={banReasonInput}
+                                onChange={(event) => setBanReasonInput(event.target.value)}
+                                maxLength={1000}
+                            />
+                        </div>
+                        <div className="admin-history-actions mt-4">
+                            <SecondaryButton className="h-10 w-auto px-4" onClick={closeBanModal}>
+                                Cancel
+                            </SecondaryButton>
+                            <PrimaryButton
+                                className="h-10 w-auto px-4"
+                                onClick={confirmBan}
+                                disabled={actionUserId === banModalUser.userId}
+                            >
+                                {actionUserId === banModalUser.userId ? "Working..." : "Confirm Ban"}
+                            </PrimaryButton>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </SectionCard>
     );
 }

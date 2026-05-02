@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 
 jest.mock('../../../../src/modules/auth/repository', () => ({
   findAdminByUserId: jest.fn(),
+  findUserAuthStateById: jest.fn(),
 }));
 
 jest.mock('../../../../src/modules/announcements/service', () => ({
@@ -17,7 +18,7 @@ jest.mock('../../../../src/modules/announcements/service', () => ({
 }));
 
 const { env } = require('../../../../src/config/env');
-const { findAdminByUserId } = require('../../../../src/modules/auth/repository');
+const { findAdminByUserId, findUserAuthStateById } = require('../../../../src/modules/auth/repository');
 const announcementService = require('../../../../src/modules/announcements/service');
 const {
   adminAnnouncementsRouter,
@@ -48,6 +49,12 @@ function signToken(payload = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  findUserAuthStateById.mockImplementation(async (userId) => ({
+    user_id: userId,
+    email: `${userId}@example.com`,
+    is_deleted: false,
+    is_banned: false,
+  }));
 });
 
 describe('announcements routes', () => {

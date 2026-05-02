@@ -411,6 +411,8 @@ export type AdminUserListItem = {
     email: string;
     isEmailVerified: boolean;
     isBanned: boolean;
+    banReason: string | null;
+    bannedAt: string | null;
     createdAt: string;
     isAdmin: boolean;
     adminRole: string | null;
@@ -458,6 +460,27 @@ export async function fetchAdminUsers(token: string, options: AdminUserListOptio
 
     const query = params.toString() ? `?${params.toString()}` : "";
     return apiRequest<AdminUserListResponse>(`/admin/users${query}`, {
+        token: token.trim(),
+    });
+}
+
+type AdminUserModerationResponse = {
+    user: AdminUserListItem;
+};
+
+export async function banAdminUser(token: string, userId: string, reason?: string | null) {
+    return apiRequest<AdminUserModerationResponse>(`/admin/users/${encodeURIComponent(userId)}/ban`, {
+        method: "PATCH",
+        token: token.trim(),
+        body: {
+            reason: typeof reason === "string" ? reason : null,
+        },
+    });
+}
+
+export async function unbanAdminUser(token: string, userId: string) {
+    return apiRequest<AdminUserModerationResponse>(`/admin/users/${encodeURIComponent(userId)}/unban`, {
+        method: "PATCH",
         token: token.trim(),
     });
 }

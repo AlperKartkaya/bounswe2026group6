@@ -1,5 +1,12 @@
 const { query } = require('../../db/pool');
 
+function runQuery(executor, text, params = []) {
+  if (executor && typeof executor.query === 'function') {
+    return executor.query(text, params);
+  }
+  return query(text, params);
+}
+
 function getDerivedUrgencySql() {
   return `
     CASE
@@ -61,6 +68,8 @@ async function listUsers({
         u.email,
         u.is_email_verified,
         u.is_banned,
+        u.ban_reason,
+        u.banned_at,
         u.created_at,
         u.is_deleted,
         u.accepted_terms,
@@ -82,6 +91,101 @@ async function listUsers({
     users: result.rows,
     total: totalResult.rows[0].count,
   };
+}
+
+async function banUserById(userId, reason = null, executor = null) {
+  const result = await runQuery(
+    executor,
+    `
+      WITH updated AS (
+        UPDATE users u
+        SET
+          is_banned = TRUE,
+          ban_reason = $2,
+          banned_at = CURRENT_TIMESTAMP
+        WHERE u.user_id = $1
+          AND u.is_deleted = FALSE
+        RETURNING
+          u.user_id,
+          u.email,
+          u.is_email_verified,
+          u.is_banned,
+          u.ban_reason,
+          u.banned_at,
+          u.created_at
+      )
+      SELECT
+        updated.*,
+        a.admin_id,
+        a.role AS admin_role,
+        p.first_name,
+        p.last_name
+      FROM updated
+      LEFT JOIN admins a ON a.user_id = updated.user_id
+      LEFT JOIN user_profiles p ON p.user_id = updated.user_id
+      LIMIT 1
+    `,
+    [userId, reason],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function findBanTargetByUserId(userId, executor = null) {
+  const result = await runQuery(
+    executor,
+    `
+      SELECT
+        u.user_id,
+        (a.admin_id IS NOT NULL) AS is_admin
+      FROM users u
+      LEFT JOIN admins a ON a.user_id = u.user_id
+      WHERE u.user_id = $1
+        AND u.is_deleted = FALSE
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function unbanUserById(userId, executor = null) {
+  const result = await runQuery(
+    executor,
+    `
+      WITH updated AS (
+        UPDATE users u
+        SET
+          is_banned = FALSE,
+          ban_reason = NULL,
+          banned_at = NULL
+        WHERE u.user_id = $1
+          AND u.is_deleted = FALSE
+        RETURNING
+          u.user_id,
+          u.email,
+          u.is_email_verified,
+          u.is_banned,
+          u.ban_reason,
+          u.banned_at,
+          u.created_at
+      )
+      SELECT
+        updated.*,
+        a.admin_id,
+        a.role AS admin_role,
+        p.first_name,
+        p.last_name
+      FROM updated
+      LEFT JOIN admins a ON a.user_id = updated.user_id
+      LEFT JOIN user_profiles p ON p.user_id = updated.user_id
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return result.rows[0] || null;
 }
 
 async function listHelpRequests() {
@@ -885,6 +989,9 @@ async function getDeploymentMonitoring({
 
 module.exports = {
   listUsers,
+  banUserById,
+  findBanTargetByUserId,
+  unbanUserById,
   listHelpRequests,
   listAnnouncements,
   getBasicStats,

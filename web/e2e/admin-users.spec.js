@@ -5,7 +5,7 @@ const {
   resetDatabase,
   waitForUserByEmail,
 } = require('./helpers/db');
-const { loginThroughUi } = require('./helpers/ui');
+const { getStoredAccessToken, loginThroughUi } = require('./helpers/ui');
 
 async function openUsersTab(page) {
   await expect(page).toHaveURL(/\/admin(\?|$)/, { timeout: 20_000 });
@@ -79,7 +79,9 @@ test('admin can open Users tab and see registered users with required columns', 
   await expect(page.getByRole('columnheader', { name: 'Email', exact: true })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Email Verified' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Banned' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Ban Reason' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Created At' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Actions' })).toBeVisible();
 
   // Both seeded emails are visible in the table.
   await expect(page.getByRole('cell', { name: adminEmail })).toBeVisible();
@@ -97,6 +99,10 @@ test('admin can open Users tab and see registered users with required columns', 
 
   const unverifiedRow = page.getByRole('row', { name: new RegExp(unverifiedEmail) });
   await expect(unverifiedRow.getByText('Unverified', { exact: true })).toBeVisible();
+
+  // Admin accounts are intentionally not bannable from the table.
+  const adminRow = page.getByRole('row', { name: new RegExp(adminEmail) });
+  await expect(adminRow.getByRole('button', { name: 'Ban' })).toHaveCount(0);
 });
 
 test('admin can filter users by email and verification status', async ({ page }) => {
@@ -141,4 +147,67 @@ test('admin can filter users by email and verification status', async ({ page })
   // Clear filters restores admin email row.
   await page.getByRole('button', { name: 'Clear Filters' }).click();
   await expect(page.getByRole('cell', { name: adminEmail })).toBeVisible();
+});
+
+test('admin can ban and unban user, and user access is restored after unban', async ({ page }) => {
+  const adminEmail = `users-moderation-admin-${Date.now()}@example.com`;
+  const password = 'Passw0rd!';
+
+  await createCompletedUser({ email: adminEmail, password });
+  const adminDbUser = await waitForUserByEmail(adminEmail);
+  await promoteUserToAdmin({ userId: adminDbUser.user_id });
+
+  const targetEmail = `users-moderation-target-${Date.now()}@example.com`;
+  await createCompletedUser({ email: targetEmail, password });
+  await waitForUserByEmail(targetEmail);
+
+  await page.goto('/login');
+  await loginThroughUi(page, { email: adminEmail, password });
+  await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible({ timeout: 20_000 });
+  await page.goto('/admin');
+  await openUsersTab(page);
+
+  const targetRow = page.getByRole('row', { name: new RegExp(targetEmail) });
+  await expect(targetRow).toBeVisible();
+  await targetRow.getByRole('button', { name: 'Ban' }).click();
+
+  await expect(page.getByRole('dialog', { name: `Confirm ban for ${targetEmail}` })).toBeVisible();
+  await page.locator('#ban-reason').fill('Repeated abusive behavior');
+  await page.getByRole('button', { name: 'Confirm Ban' }).click();
+
+  await expect(page.getByText(`User ${targetEmail} was banned successfully.`)).toBeVisible();
+  await expect(targetRow.getByText('Banned', { exact: true })).toBeVisible();
+  await expect(targetRow.getByText('Repeated abusive behavior')).toBeVisible();
+
+  await page.evaluate(() => {
+    window.localStorage.removeItem('neph_access_token');
+    window.sessionStorage.removeItem('neph_access_token');
+  });
+
+  await page.goto('/login');
+  await loginThroughUi(page, { email: targetEmail, password });
+  await expect(page.getByText(/banned/i)).toBeVisible();
+  await expect.poll(async () => getStoredAccessToken(page)).toBeNull();
+
+  await page.goto('/profile');
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fprofile$/);
+
+  await page.goto('/login');
+  await loginThroughUi(page, { email: adminEmail, password });
+  await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible({ timeout: 20_000 });
+  await page.goto('/admin');
+  await openUsersTab(page);
+
+  await targetRow.getByRole('button', { name: 'Unban' }).click();
+  await expect(page.getByText(`User ${targetEmail} was unbanned successfully.`)).toBeVisible();
+  await expect(targetRow.getByText('Active', { exact: true })).toBeVisible();
+
+  await page.evaluate(() => {
+    window.localStorage.removeItem('neph_access_token');
+    window.sessionStorage.removeItem('neph_access_token');
+  });
+
+  await page.goto('/login');
+  await loginThroughUi(page, { email: targetEmail, password });
+  await expect(page).toHaveURL(/\/home$/);
 });
